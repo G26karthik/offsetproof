@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OffsetProof — runs</title>
+<style>
+  :root { --ink: #1c2b21; --accent: #1f6f43; --muted: #5c665e; --line: #dfe4e0; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+         color: var(--ink); max-width: 72rem; margin: 2rem auto; padding: 0 1rem; }
+  h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
+  p.sub { color: var(--muted); margin: 0 0 1.5rem; font-size: .9rem; }
+  table { border-collapse: collapse; width: 100%; font-size: .85rem;
+          font-variant-numeric: tabular-nums; }
+  th, td { border: 1px solid var(--line); padding: .4rem .6rem; text-align: left; }
+  th { background: #f2f5f2; }
+  td.num { text-align: right; }
+  .pass { color: var(--accent); font-weight: 600; }
+  .missing { color: var(--muted); font-style: italic; }
+  section { margin-bottom: 2rem; }
+  h2 { font-size: 1.05rem; border-bottom: 2px solid var(--accent);
+       padding-bottom: .25rem; }
+  select { font-size: .9rem; }
+  pre { background: #f2f5f2; padding: .75rem; overflow: auto; font-size: .8rem; }
+</style>
+</head>
+<body>
+<h1>OffsetProof runs</h1>
+<p class="sub">Reproducible Kafka reliability trials. Every number below is read
+from a run bundle on this machine; anything unmeasured says so.</p>
+
+<section>
+<h2>Runs</h2>
+<label>Run <select id="run"></select></label>
+<table id="summary"><tbody><tr><td class="missing">loading…</td></tr></tbody></table>
+</section>
+
+<section>
+<h2>Lag</h2>
+<table id="lag"><tbody><tr><td class="missing">select a run</td></tr></tbody></table>
+</section>
+
+<section>
+<h2>Diagnosis</h2>
+<pre id="incident" class="missing">select a run</pre>
+</section>
+
+<script>
+async function get(url) {
+  const r = await fetch(url);
+  return r.json();
+}
+function cell(v) {
+  return (v === null || v === undefined || v === "")
+    ? '<span class="missing">unavailable</span>' : String(v);
+}
+async function init() {
+  const runs = await get("/runs");
+  const sel = document.getElementById("run");
+  if (!runs.length) {
+    document.querySelector("#summary tbody").innerHTML =
+      '<tr><td class="missing">no runs recorded yet — run make seed first</td></tr>';
+    return;
+  }
+  for (const r of runs) {
+    const o = document.createElement("option");
+    o.value = r.run_id; o.textContent = r.run_id + " (" + r.profile + ")";
+    sel.appendChild(o);
+  }
+  sel.onchange = () => show(sel.value);
+  show(sel.value);
+}
+async function show(id) {
+  const run = await get("/runs/" + encodeURIComponent(id));
+  const rows = [["run", run.run_id], ["profile", run.profile],
+    ["seed", run.seed], ["attempted", run.attempted],
+    ["acknowledged", run.acknowledged],
+    ["rule diagnosis", run.incident_rule && run.incident_rule.root_cause_family],
+    ["agent diagnosis", run.incident_agent && run.incident_agent.root_cause_family]];
+  document.querySelector("#summary tbody").innerHTML =
+    rows.map(([k, v]) => "<tr><th>" + k + "</th><td>" + cell(v) + "</td></tr>").join("");
+  const m = await get("/runs/" + encodeURIComponent(id) + "/metrics");
+  const lag = document.querySelector("#lag tbody");
+  if (m.unavailable || !m.rows.length) {
+    lag.innerHTML = '<tr><td class="missing">no metrics recorded for this run</td></tr>';
+  } else {
+    const cols = Object.keys(m.rows[0]);
+    lag.innerHTML = "<tr>" + cols.map(c => "<th>" + c + "</th>").join("") + "</tr>" +
+      m.rows.slice(-10).map(r =>
+        "<tr>" + cols.map(c => '<td class="num">' + cell(r[c]) + "</td>").join("") + "</tr>").join("");
+  }
+  document.getElementById("incident").textContent =
+    JSON.stringify(run.incident_rule || {unavailable: true}, null, 1);
+}
+init();
+</script>
+</body>
+</html>
