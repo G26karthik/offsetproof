@@ -130,6 +130,18 @@ excuse for a weak baseline — tracked as a risk in `docs/STATUS.md`.
 
 ## Log (newest first)
 
+- **2026-11-24 — S5.** Poison saga closed. run-08 PASS (2911 valid +
+  205/205 DLQ, zero missing/phantoms). Root causes, in order: (1) UUID-only
+  DLQ column crashed on synthetic ids; (2) run-scoped oracle couldn't see
+  run_id='' poison rows — fixed with envelope run_id (+ backfilled 85
+  rows); (3) synthetic undecodable-* DLQ ids could never match the
+  oracle's expected event_ids — fixed with envelope event_id, single-poison
+  probe proved the path. run-06 evidence was destroyed by my own mid-run
+  TRUNCATE (offsets already committed) — documented as operator error, not
+  pipeline failure; fixture now deletes only its own rows. Subagent built
+  Gate C rule engine in parallel (9 tests, green). Finance + real-data
+  tracks live. User granted blanket autonomous permission; sole-contributor
+  rule unchanged.
 - **2026-11-24 — S4.** F1 crash/restart PASS (3095/3095 after SIGKILL).
   run-02 taught a real lesson: same `order-{i}` ids across runs collided in
   the long-lived projection and failed the oracle correctly — fixed with

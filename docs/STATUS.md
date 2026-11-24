@@ -7,10 +7,21 @@
 - run-03 F1 consumer SIGKILL + restart (seed 44, 800 orders): 3095/3095, PASS.
 - run-05 real UCI Online Retail II slice (3000 invoices): 2502 valid
   persisted, 498 real cancels in DLQ, PASS. Dataset SHA256 on record.
-- Bugs caught by measurement: cross-run order_id collision (fixed with
-  per-run namespace), oracle missing run filter (fixed), sink committing
-  rejected-event rows (fixed + regression tests).
-- Gate A remainder: poison/F6/DB-down/skew/ledger runs, then Gates B–E.
+- run-06 poison (seed 45): SUPERSEDED — operator truncated tables mid-run
+  with offsets committed, destroying its evidence. Lesson encoded:
+  integration fixture now deletes only its own run_id rows, never TRUNCATE.
+- run-07 poison rerun: exposed DLQ identity bug (below); evidence kept.
+- run-08 poison (seed 47, 800 orders): 2911 valid + 205/205 DLQ, PASS.
+- run-09 F6 crash-after-DB-commit (seed 48): exit 137 observed, draining.
+- Bugs caught by measurement: cross-run order_id collision (per-run
+  namespace), oracle run filter, sink phantom rows (exception rollback),
+  UUID-only DLQ column (TEXT), DLQ run attribution (envelope run_id),
+  DLQ identity (envelope event_id; synthetic undecodable-* ids hid 84
+  poison records from the oracle in run-06/07).
+- Gate A remainder: F6 verdict, DB-down, skew, ledger runs, then B–E.
+- 2026-11-24: user granted blanket permission to proceed autonomously
+  (docker/gh/installs). Sole-contributor rule stands: no co-author
+  trailers, only user identity on commits.
 
 ### Implemented code paths
 - `src/offsetproof/events.py` — contract validation, lifecycle state machine.

@@ -29,11 +29,19 @@ def _event(order_id: str, seq: int, etype: str) -> events.OrderEvent:
 
 @pytest.fixture()
 def conn():
+    # Delete ONLY this fixture's rows: TRUNCATE would destroy lab runs whose
+    # Kafka offsets are already committed (learned the hard way, run-06).
     c = db.connect()
-    c.execute("TRUNCATE processed_events, order_projection, dlq_records")
+    c.execute("DELETE FROM dlq_records WHERE run_id = 'test-run'")
+    c.execute(
+        "DELETE FROM order_projection WHERE order_id IN "
+        "(SELECT order_id FROM processed_events WHERE run_id = 'test-run')"
+    )
+    c.execute("DELETE FROM processed_events WHERE run_id = 'test-run'")
     c.commit()
     yield c
-    c.execute("TRUNCATE processed_events, order_projection, dlq_records")
+    c.execute("DELETE FROM dlq_records WHERE run_id = 'test-run'")
+    c.execute("DELETE FROM processed_events WHERE run_id = 'test-run'")
     c.commit()
     c.close()
 
@@ -57,6 +65,15 @@ def test_duplicate_apply_is_single_effect(conn):
         assert cur.fetchone()[0] == 1
         cur.execute("SELECT status FROM order_projection WHERE order_id = 'o-1'")
         assert cur.fetchone()[0] == "CREATED"
+
+
+def test_dlq_accepts_non_uuid_ids(conn):
+    db.record_dlq(conn, "r", None, "undecodable-0-3606", "undecodable",
+                  {"_undecodable": True})
+    with conn.cursor() as cur:
+        cur.execute("SELECT error_class FROM dlq_records WHERE event_id = %s",
+                    ("undecodable-0-3606",))
+        assert cur.fetchone()[0] == "undecodable"
 
 
 def test_ledger_double_settle_rejected_without_trace(conn):

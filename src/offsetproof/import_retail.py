@@ -16,6 +16,7 @@ import uuid
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 import click
 
@@ -68,7 +69,7 @@ def main(xlsx: str, zip_path: str, sheet: str, max_invoices: int, out_dir: str) 
     header = next(rows)
     idx = {name: i for i, name in enumerate(header)}
 
-    lines: dict[str, list[tuple] ] = defaultdict(list)
+    lines: dict[str, list[tuple[Any, ...]]] = defaultdict(list)
     n_rows = 0
     for r in rows:
         n_rows += 1

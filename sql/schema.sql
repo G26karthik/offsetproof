@@ -20,7 +20,9 @@ CREATE TABLE IF NOT EXISTS order_projection (
 -- Quarantined invalid / non-retryable events. Duplicates possible on crash
 -- during DLQ handoff (no exactly-once claim); dedupe by event_id on read.
 CREATE TABLE IF NOT EXISTS dlq_records (
-    event_id        UUID NOT NULL,
+    -- TEXT, not UUID: quarantined payloads include undecodable bytes and
+    -- synthetic ids (e.g. undecodable-<partition>-<offset>) that are not UUIDs.
+    event_id        TEXT NOT NULL,
     run_id          TEXT NOT NULL,
     order_id        TEXT,
     error_class     TEXT NOT NULL,

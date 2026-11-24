@@ -107,7 +107,26 @@ def main(bootstrap: str, group_id: str, topic: str, dlq_topic: str,
                 consumer.commit(message=msg, asynchronous=False)
                 continue
             kind, event, detail = classify(raw)
-            run_id = event.run_id if event else ""
+            # A schema-invalid record has no parsed event, but its raw JSON
+            # envelope still carries the producer's run_id. Without this,
+            # poison records are stored under run_id='' and the run-scoped
+            # oracle can never reconcile them (run-06/07 lesson).
+            envelope_run_id = ""
+            envelope_event_id: str | None = None
+            try:
+                decoded = json.loads(raw.decode("utf-8"))
+                if isinstance(decoded, dict):
+                    envelope_run_id = str(decoded.get("run_id", "") or "")
+                    candidate = decoded.get("event_id")
+                    if isinstance(candidate, str):
+                        try:
+                            uuid.UUID(candidate)
+                            envelope_event_id = candidate
+                        except ValueError:
+                            pass
+            except (ValueError, UnicodeDecodeError):
+                pass
+            run_id = (event.run_id if event else "") or envelope_run_id
             if kind == "valid" and event is not None:
                 if DB_DELAY_SECONDS:  # F2 slow-sink hook (evaluator-side only)
                     time.sleep(DB_DELAY_SECONDS)
@@ -139,9 +158,12 @@ def main(bootstrap: str, group_id: str, topic: str, dlq_topic: str,
                         raw_payload = json.loads(raw.decode("utf-8"))
                     except (ValueError, UnicodeDecodeError):
                         raw_payload = {"_undecodable": True}
-                dlq_id = (event.event_id if event else None) or (
-                    f"undecodable-{msg.partition()}-{msg.offset()}"
-                )
+                if event is not None:
+                    dlq_id = event.event_id
+                elif envelope_event_id is not None:
+                    dlq_id = envelope_event_id
+                else:
+                    dlq_id = f"undecodable-{msg.partition()}-{msg.offset()}"
                 db.record_dlq(conn, run_id,
                               event.order_id if event else None,
                               dlq_id, detail or kind, raw_payload)
@@ -154,7 +176,8 @@ def main(bootstrap: str, group_id: str, topic: str, dlq_topic: str,
             consumer.commit(message=msg, asynchronous=False)
             committed += 1
             log_record("info", event="committed", partition=msg.partition(),
-                       offset=msg.offset(), kind=kind, detail=detail)
+                       offset=msg.offset(), kind=kind, detail=detail,
+                       event_id=event.event_id if event else None)
             if max_messages and committed >= max_messages:
                 log_record("info", event="max_messages_reached",
                            committed=committed)
