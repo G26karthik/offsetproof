@@ -17,6 +17,8 @@ from typing import Any
 
 import click
 
+from .drain import drain_until_pass, start_consumer, stop_consumer
+
 
 def _sh(args: list[str], cwd: Path, env_extra: dict[str, str] | None = None,
         out_file: Path | None = None) -> str:
@@ -36,44 +38,9 @@ def _sh(args: list[str], cwd: Path, env_extra: dict[str, str] | None = None,
     return proc.stdout
 
 
-def _drain_until_pass(root: Path, run_dir: Path, bootstrap: str,
-                      timeout_rounds: int = 40) -> str:
-    """Drain with the continuing main group until the oracle passes.
-
-    A fresh consumer group would replay the whole topic from earliest and
-    drain ancient duplicates instead of this run, so every run shares the
-    one group and drains to its own oracle verdict. Stray members only
-    help: the sink is idempotent, and PASS is checked, not assumed.
-    """
-    consumer = subprocess.Popen(
-        [sys.executable, "-m", "offsetproof.consumer", "--bootstrap",
-         bootstrap],
-        cwd=root,
-        stdout=open(run_dir / "consumer.log", "w", encoding="utf-8"),
-        stderr=subprocess.STDOUT,
-        text=True,
-    )
-    verdict = "FAIL"
-    try:
-        for _ in range(timeout_rounds):
-            time.sleep(15)
-            out = _sh(
-                [sys.executable, "-m", "offsetproof.ops.verify", "--manifest",
-                 str(run_dir / "manifest.json")], root)
-            if "\nPASS" in out:
-                verdict = "PASS"
-                break
-    finally:
-        consumer.terminate()
-        try:
-            consumer.wait(timeout=30)
-        except subprocess.TimeoutExpired:
-            consumer.kill()
-    return verdict
-
-
 def _one_run(root: Path, demo: Path, name: str, seed: int, orders: int,
-             poison_every: int, bootstrap: str) -> dict[str, Any]:
+             poison_every: int, bootstrap: str,
+             consumer: "subprocess.Popen[str]") -> dict[str, Any]:
     run_dir = demo / name
     run_dir.mkdir(parents=True, exist_ok=True)
     poison_flag = ["--poison-every", str(poison_every)] if poison_every else []
@@ -81,11 +48,22 @@ def _one_run(root: Path, demo: Path, name: str, seed: int, orders: int,
          "--orders", str(orders), *poison_flag,
          "--out-dir", str(run_dir), "--bootstrap", bootstrap], root)
     manifest = json.loads((run_dir / "manifest.json").read_text())
-    verdict = _drain_until_pass(root, run_dir, bootstrap)
+    verdict = drain_until_pass(run_dir, bootstrap, root, consumer=consumer)
     _sh([sys.executable, "-m", "offsetproof.ops.bundle", "--run-dir",
          str(run_dir), "--bootstrap", bootstrap], root)
-    shutil.copy(run_dir / "consumer.log", run_dir / "consumer_logs.jsonl")
-    shutil.copy(run_dir / "consumer.log", run_dir / "consumer_logs.jsonl")
+    # One consumer serves all runs, so its log is shared. Split this run's
+    # records by event_id (commit lines carry it); keep non-commit lines,
+    # which describe group state rather than any single run.
+    run_ids = set(manifest.get("valid_ids", [])) | set(
+        manifest.get("invalid_ids", []))
+    with open(demo / "demo-consumer.log", encoding="utf-8") as src:
+        kept = [
+            line for line in src
+            if '"event_id": null' in line
+            or any(eid in line for eid in run_ids)
+        ]
+    (run_dir / "consumer_logs.jsonl").write_text("".join(kept),
+                                                 encoding="utf-8")
     _sh([sys.executable, "-m", "offsetproof.diagnose", "--mode", "rules",
          "--run", str(run_dir)], root)
     verify_out = _sh(
@@ -111,8 +89,14 @@ def main(bootstrap: str, out: str) -> None:
         shutil.rmtree(demo)
     demo.mkdir(parents=True)
     t0 = time.time()
-    control = _one_run(root, demo, "control", 100, 200, 0, bootstrap)
-    fault = _one_run(root, demo, "fault-poison", 101, 200, 37, bootstrap)
+    consumer = start_consumer(root, bootstrap, demo / "demo-consumer.log")
+    try:
+        control = _one_run(root, demo, "control", 100, 200, 0, bootstrap,
+                           consumer)
+        fault = _one_run(root, demo, "fault-poison", 101, 200, 37, bootstrap,
+                         consumer)
+    finally:
+        stop_consumer(consumer)
     dt = time.time() - t0
     summary = {"control": control, "fault": fault,
                "elapsed_seconds": round(dt, 1)}

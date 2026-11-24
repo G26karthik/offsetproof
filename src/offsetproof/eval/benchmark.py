@@ -19,7 +19,8 @@ from typing import Any
 import click
 import yaml
 
-from offsetproof.ops.demo import _drain_until_pass
+from offsetproof.ops.drain import drain_until_pass, start_consumer
+from offsetproof.ops.drain import stop_consumer
 
 
 def _sh(args: list[str], cwd: Path) -> str:
@@ -53,6 +54,8 @@ def main(config: str, out: str, dry_run: bool) -> None:
     seeds = [int(plan.get("seed", 42))]
     n_trials = int(plan.get("fault_trials", 0))
     orders = int(plan.get("events_per_trial", 10000)) // 4 or 200
+    consumer = start_consumer(root, "localhost:29092",
+                              out_dir / "benchmark-consumer.log")
     for trial in range(n_trials):
         seed = seeds[0] + trial
         scenario = "poison" if trial % 2 else "control"
@@ -66,7 +69,8 @@ def main(config: str, out: str, dry_run: bool) -> None:
         _sh(produce_cmd, root)
         manifest = json.loads((run_dir / "manifest.json").read_text())
         t0 = time.time()
-        verdict = _drain_until_pass(root, run_dir, "localhost:29092")
+        verdict = drain_until_pass(run_dir, "localhost:29092", root,
+                                   consumer=consumer)
         if verdict != "PASS":
             raise RuntimeError(
                 f"trial {trial} ({scenario}) did not reach PASS; "
@@ -83,6 +87,7 @@ def main(config: str, out: str, dry_run: bool) -> None:
              "drain_seconds": drain_s,
              "events_per_second": round(attempted / drain_s, 1)
              if drain_s > 0 else None})
+    stop_consumer(consumer)
     passed = sum(1 for t in scorecard["trials"] if t["verdict"] == "PASS")
     scorecard["status"] = "complete"
     scorecard["summary"] = {"trials": len(scorecard["trials"]),
