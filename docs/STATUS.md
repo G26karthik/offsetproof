@@ -20,6 +20,14 @@
   (Hot key replays concatenated lifecycles, so its repeats are
   expected-invalid — volume skew is real, quarantine is correct.)
 - run-12 payment ledger (seed 51, profile ledger): 1571/1571 PASS.
+- run-13 F5 attempt: ABORTED (cluster not host-reachable on all brokers).
+- run-14 F5 attempt: ABORTED (producer guard caught 832/1567 partial ack).
+- run-15 F5 broker kill 40s on 3-node RF=3/minISR=2: PASS, ISR restored.
+- run-16 F2 slow sink (0.25s DB delay, 394 events): PASS; DB latency, not
+  broker, was the bottleneck by construction.
+- demo/ (control 783 + poison 777): PASS/PASS in 35s with bundles.
+- Remaining live work: none for Gates A–C. Gate D real-LLM comparison
+  needs a key (stubs verified); benchmark matrix is code-complete, unrun.
 - Bugs caught by measurement: cross-run order_id collision (per-run
   namespace), oracle run filter, sink phantom rows (exception rollback),
   UUID-only DLQ column (TEXT), DLQ run attribution (envelope run_id),

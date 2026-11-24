@@ -31,7 +31,8 @@ def _sh(args: list[str], cwd: Path) -> str:
 @click.option("--dry-run", is_flag=True, default=False)
 def main(config: str, out: str, dry_run: bool) -> None:
     plan = yaml.safe_load(Path(config).read_text(encoding="utf-8"))
-    root = Path(config).resolve().parent.parent.parent
+    # eval/plans/<name>.yaml -> plans -> eval -> src -> repo root
+    root = Path(config).resolve().parent.parent.parent.parent
     out_dir = Path(out)
     out_dir.mkdir(parents=True, exist_ok=True)
     scorecard: dict[str, Any] = {

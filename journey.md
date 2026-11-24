@@ -130,6 +130,15 @@ excuse for a weak baseline — tracked as a risk in `docs/STATUS.md`.
 
 ## Log (newest first)
 
+- **2026-11-24 — S7.** All fault runs green: F6 (776/776 after kill between
+  DB commit and offset commit), DB-down 45s (reconnect fix proven — pre-fix
+  code stranded at 439/1558), hot partition (p0 lag 1783 vs ~270, all
+  reconciled), ledger (1571/1571), F5 broker kill on RF=3 (PASS, ISR
+  restored), slow sink (PASS). Two aborted F5 attempts taught real lessons:
+  inter-broker hostnames must be host-resolvable (per-broker host ports)
+  and the producer now fails loudly on partial ack. Demo runs end to end
+  (PASS/PASS, 35s) after fixing its fresh-group replay bug — groups
+  continue, topics don't restart. Repo public, history pushed.
 - **2026-11-24 — S5.** Poison saga closed. run-08 PASS (2911 valid +
   205/205 DLQ, zero missing/phantoms). Root causes, in order: (1) UUID-only
   DLQ column crashed on synthetic ids; (2) run-scoped oracle couldn't see

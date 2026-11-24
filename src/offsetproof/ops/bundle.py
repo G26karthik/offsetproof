@@ -47,10 +47,16 @@ def append_snapshot(
 def main(run_dir: str, bootstrap: str, topic: str, group_id: str) -> None:
     snap = collect_live(bootstrap, topic, group_id)
     path = append_snapshot(Path(run_dir), snap)
-    manifest = {"run_dir": run_dir, "topic": topic, "group_id": group_id,
-                "latest": snap}
-    (Path(run_dir) / "manifest.json").write_text(
-        json.dumps(manifest, indent=2), encoding="utf-8")
+    manifest_path = Path(run_dir) / "manifest.json"
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        manifest = {}
+    # Merge telemetry context; never drop the producer's ack manifest,
+    # which the oracle needs (valid_ids, expected_final, dataset).
+    manifest.update({"run_dir": run_dir, "topic": topic,
+                     "group_id": group_id, "latest": snap})
+    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     click.echo(f"snapshot appended to {path}")
 
 

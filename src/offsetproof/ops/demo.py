@@ -36,8 +36,44 @@ def _sh(args: list[str], cwd: Path, env_extra: dict[str, str] | None = None,
     return proc.stdout
 
 
+def _drain_until_pass(root: Path, run_dir: Path, bootstrap: str,
+                      timeout_rounds: int = 20) -> str:
+    """Drain with the continuing main group until the oracle passes.
+
+    A fresh consumer group would replay the whole topic from earliest and
+    drain ancient duplicates instead of this run, so every run shares the
+    one group and drains to its own oracle verdict. Stray members only
+    help: the sink is idempotent, and PASS is checked, not assumed.
+    """
+    consumer = subprocess.Popen(
+        [sys.executable, "-m", "offsetproof.consumer", "--bootstrap",
+         bootstrap],
+        cwd=root,
+        stdout=open(run_dir / "consumer.log", "w", encoding="utf-8"),
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    verdict = "FAIL"
+    try:
+        for _ in range(timeout_rounds):
+            time.sleep(15)
+            out = _sh(
+                [sys.executable, "-m", "offsetproof.ops.verify", "--manifest",
+                 str(run_dir / "manifest.json")], root)
+            if "\nPASS" in out:
+                verdict = "PASS"
+                break
+    finally:
+        consumer.terminate()
+        try:
+            consumer.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            consumer.kill()
+    return verdict
+
+
 def _one_run(root: Path, demo: Path, name: str, seed: int, orders: int,
-             poison_every: int, bootstrap: str, group: str) -> dict[str, Any]:
+             poison_every: int, bootstrap: str) -> dict[str, Any]:
     run_dir = demo / name
     run_dir.mkdir(parents=True, exist_ok=True)
     poison_flag = ["--poison-every", str(poison_every)] if poison_every else []
@@ -45,21 +81,20 @@ def _one_run(root: Path, demo: Path, name: str, seed: int, orders: int,
          "--orders", str(orders), *poison_flag,
          "--out-dir", str(run_dir), "--bootstrap", bootstrap], root)
     manifest = json.loads((run_dir / "manifest.json").read_text())
-    _sh([sys.executable, "-m", "offsetproof.consumer", "--bootstrap",
-         bootstrap, "--group-id", group, "--max-messages",
-         str(manifest["attempted"])], root, out_file=run_dir / "consumer.log")
+    verdict = _drain_until_pass(root, run_dir, bootstrap)
     _sh([sys.executable, "-m", "offsetproof.ops.bundle", "--run-dir",
-         str(run_dir), "--bootstrap", bootstrap, "--group-id", group], root)
+         str(run_dir), "--bootstrap", bootstrap], root)
+    shutil.copy(run_dir / "consumer.log", run_dir / "consumer_logs.jsonl")
     shutil.copy(run_dir / "consumer.log", run_dir / "consumer_logs.jsonl")
     _sh([sys.executable, "-m", "offsetproof.diagnose", "--mode", "rules",
          "--run", str(run_dir)], root)
     verify_out = _sh(
         [sys.executable, "-m", "offsetproof.ops.verify", "--manifest",
          str(run_dir / "manifest.json")], root)
-    verdict = "PASS" if "\nPASS" in verify_out else "FAIL"
+    final = "PASS" if verdict == "PASS" and "\nPASS" in verify_out else "FAIL"
     (run_dir / "correctness_oracle.json").write_text(
-        json.dumps({"verdict": verdict, "detail": verify_out[-2000:]}))
-    return {"name": name, "run_id": manifest["run_id"], "verdict": verdict,
+        json.dumps({"verdict": final, "detail": verify_out[-2000:]}))
+    return {"name": name, "run_id": manifest["run_id"], "verdict": final,
             "attempted": manifest["attempted"]}
 
 
@@ -67,16 +102,15 @@ def _one_run(root: Path, demo: Path, name: str, seed: int, orders: int,
 @click.option("--bootstrap", default="localhost:29092")
 @click.option("--out", default="results/demo")
 def main(bootstrap: str, out: str) -> None:
-    root = Path(__file__).resolve().parent.parent.parent
+    # ops/demo.py -> ops -> offsetproof(pkg) -> src -> repo root
+    root = Path(__file__).resolve().parent.parent.parent.parent
     demo = Path(out)
     if demo.exists():
         shutil.rmtree(demo)
     demo.mkdir(parents=True)
     t0 = time.time()
-    control = _one_run(root, demo, "control", 100, 200, 0, bootstrap,
-                       "offsetproof-demo-control")
-    fault = _one_run(root, demo, "fault-poison", 101, 200, 37, bootstrap,
-                     "offsetproof-demo-fault")
+    control = _one_run(root, demo, "control", 100, 200, 0, bootstrap)
+    fault = _one_run(root, demo, "fault-poison", 101, 200, 37, bootstrap)
     dt = time.time() - t0
     summary = {"control": control, "fault": fault,
                "elapsed_seconds": round(dt, 1)}
