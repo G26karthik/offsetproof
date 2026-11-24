@@ -8,5 +8,5 @@ app = FastAPI(title="offsetproof")
 
 
 @app.get("/healthz")
-def healthz() -> dict:
+def healthz() -> dict[str, str]:
     return {"status": "ok", "gate": "A-scaffold"}

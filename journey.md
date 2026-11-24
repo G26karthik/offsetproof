@@ -130,6 +130,15 @@ excuse for a weak baseline — tracked as a risk in `docs/STATUS.md`.
 
 ## Log (newest first)
 
+- **2026-11-24 — S3.** Sandbox installs authorized; bootstrapped Python
+  without touching the system: uv binary via node egress into
+  `.tools/uv-bin`, managed CPython 3.12.16 into `.tools/python`, project
+  `.venv` in repo. `uv pip install -e .[dev]` succeeded. First real gates:
+  **11 unit tests pass, ruff clean, mypy strict clean (15 files).**
+  Toolchain then paid for itself: fixed an unused file handle, a lambda
+  mypy couldn't infer, `psycopg.Json` import path, untyped callbacks,
+  `None`-valued Kafka records, and bare generics. Bootstrap tooling stays
+  in gitignored `.tools/`; only `.venv` layout is documented for the user.
 - **2026-11-24 — S2.** Ponytail adopted (plugin `DietrichGebert/ponytail`
   5.3.2 found in Claude Code cache; main + review skills read). Ran a
   ponytail-review over the Gate A commit: caught a real oracle tautology

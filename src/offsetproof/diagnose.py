@@ -10,11 +10,12 @@ from __future__ import annotations
 import json
 import uuid
 from pathlib import Path
+from typing import Any
 
 import click
 
 
-def diagnose_bundle(bundle_dir: Path) -> dict:
+def diagnose_bundle(bundle_dir: Path) -> dict[str, Any]:
     metrics_path = bundle_dir / "metrics.csv"
     if not metrics_path.exists():
         return report("unknown", "unknown", ["no metrics.csv in bundle"],
@@ -30,7 +31,7 @@ def diagnose_bundle(bundle_dir: Path) -> dict:
 
 
 def report(root_cause_family: str, confidence: str, symptoms: list[str],
-           counter_evidence: list[str], limitation: str) -> dict:
+           counter_evidence: list[str], limitation: str) -> dict[str, Any]:
     return {
         "incident_id": str(uuid.uuid4()),
         "time_window": {"start": "", "end": ""},

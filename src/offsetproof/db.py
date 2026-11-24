@@ -6,6 +6,7 @@ import os
 from typing import Any
 
 import psycopg
+from psycopg.types.json import Json
 
 from . import events
 
@@ -94,5 +95,5 @@ def record_dlq(
                 "INSERT INTO dlq_records "
                 "(event_id, run_id, order_id, error_class, raw_payload) "
                 "VALUES (%s, %s, %s, %s, %s) ON CONFLICT DO NOTHING",
-                (event_id, run_id, order_id, error_class, psycopg.Json(raw_payload)),
+                (event_id, run_id, order_id, error_class, Json(raw_payload)),
             )

@@ -7,6 +7,7 @@ import os
 import time
 import uuid
 from pathlib import Path
+from typing import Any
 
 import click
 from confluent_kafka import Producer
@@ -48,31 +49,30 @@ def main(seed: int, orders: int, skew_hot_fraction: float, poison_every: int,
     )
     producer = make_producer(bootstrap)
     acked: list[str] = []
-    failed: list[dict] = []
-
-    def on_delivery(err, msg, _ev_id: str = "") -> None:
-        if err is None:
-            acked.append(_ev_id)
-            metrics.PRODUCED.labels(run_id=run_id).inc()
-        else:
-            failed.append({"event_id": _ev_id, "error": str(err)})
+    failed: list[dict[str, Any]] = []
 
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     interval = 1.0 / rate if rate > 0 else 0.0
+    for ev in wl.stream:
+        payload = json.dumps(ev.to_dict()).encode()
+
+        # Default-arg binding avoids the late-binding closure trap.
+        def _cb(err: Any, msg: Any, eid: str = ev.event_id) -> None:
+            if err is None:
+                acked.append(eid)
+                metrics.PRODUCED.labels(run_id=run_id).inc()
+            else:
+                failed.append({"event_id": eid, "error": str(err)})
+
+        producer.produce(topic, key=ev.order_id, value=payload, on_delivery=_cb)
+        producer.poll(0)
+        if interval:
+            time.sleep(interval)
+    producer.flush(120)
     with open(out / "producer_acknowledgements.jsonl", "w", encoding="utf-8") as fh:
-        for ev in wl.stream:
-            payload = json.dumps(ev.to_dict()).encode()
-            # Bind the event id at delivery time (late-binding closure trap).
-            producer.produce(
-                topic, key=ev.order_id, value=payload,
-                on_delivery=lambda e, m, eid=ev.event_id: on_delivery(e, m, eid),
-            )
-            producer.poll(0)
-            gap = interval
-            if gap:
-                time.sleep(gap)
-        producer.flush(120)
+        for eid in acked:
+            fh.write(json.dumps({"event_id": eid}) + "\n")
 
     acked_set = set(acked)
     manifest = {

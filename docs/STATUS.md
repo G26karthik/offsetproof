@@ -15,7 +15,9 @@
 
 ### Commands executed
 - Version verification via Docker Hub tag API + PyPI metadata (web): PASS.
-- `pytest`, `make up`, integration suite: NOT RUN (no Python, no daemon).
+- `pytest -m unit`: 11 passed, 4 integration deselected (2026-11-24).
+- `ruff check src tests`: clean. `mypy src` (strict): clean, 15 files.
+- Integration suite + `make up`: NOT RUN (daemon still down).
 
 ### Pass/fail + artifacts
 - No test executions yet. `results/` empty.

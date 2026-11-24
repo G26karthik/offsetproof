@@ -50,7 +50,7 @@ def _guard_container(name: str) -> str:
     return name
 
 
-def docker(*args: str) -> subprocess.CompletedProcess:
+def docker(*args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(["docker", *args], capture_output=True, text=True, timeout=120)
 
 

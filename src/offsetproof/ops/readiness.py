@@ -6,7 +6,7 @@ import os
 import sys
 
 import click
-from confluent_kafka.admin import AdminClient, NewTopic
+from confluent_kafka.admin import AdminClient, NewTopic  # type: ignore[attr-defined]
 
 from .. import db
 

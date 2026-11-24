@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 import time
 import uuid
+from typing import Any
 
 import click
 from confluent_kafka import Consumer, Producer
@@ -72,12 +72,12 @@ def main(bootstrap: str, group_id: str, topic: str, dlq_topic: str,
     )
     conn = db.connect()
 
-    def on_assign(c, partitions) -> None:
+    def on_assign(c: Any, partitions: list[Any]) -> None:
         metrics.REBALANCES.labels(group_id=group_id).inc()
         log_record("info", event="assigned",
                    partitions=[(p.topic, p.partition) for p in partitions])
 
-    def on_revoke(c, partitions) -> None:
+    def on_revoke(c: Any, partitions: list[Any]) -> None:
         log_record("info", event="revoked",
                    partitions=[(p.topic, p.partition) for p in partitions])
 
@@ -92,7 +92,15 @@ def main(bootstrap: str, group_id: str, topic: str, dlq_topic: str,
             if msg.error():
                 log_record("warn", event="kafka_error", error=str(msg.error()))
                 continue
-            kind, event, detail = classify(msg.value())
+            raw = msg.value()
+            if raw is None:
+                # No tombstones are ever produced to this topic; a None value
+                # means a corrupt record. Advance past it loudly, never silently.
+                log_record("warn", event="none_value",
+                           partition=msg.partition(), offset=msg.offset())
+                consumer.commit(message=msg, asynchronous=False)
+                continue
+            kind, event, detail = classify(raw)
             run_id = event.run_id if event else ""
             if kind == "valid" and event is not None:
                 if DB_DELAY_SECONDS:  # F2 slow-sink hook (evaluator-side only)
@@ -117,12 +125,12 @@ def main(bootstrap: str, group_id: str, topic: str, dlq_topic: str,
                 else:
                     metrics.CONSUMED.labels(run_id=run_id, outcome=outcome).inc()
             if kind != "valid":
-                raw_payload: dict = {}
+                raw_payload: dict[str, Any] = {}
                 if event is not None:
                     raw_payload = event.to_dict()
                 else:
                     try:
-                        raw_payload = json.loads(msg.value().decode("utf-8"))
+                        raw_payload = json.loads(raw.decode("utf-8"))
                     except (ValueError, UnicodeDecodeError):
                         raw_payload = {"_undecodable": True}
                 dlq_id = (event.event_id if event else None) or (
