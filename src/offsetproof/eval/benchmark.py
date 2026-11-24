@@ -1,8 +1,10 @@
 """Reproducible benchmark runner (Gate B). Plan-driven, artifact-first.
 
-Reads eval/plans/baseline.yaml, executes each trial through the fault
-runner in --execute mode, drains with the consumer, verifies with the
-oracle, and freezes scorecard.json. Fails loudly; never invents numbers.
+Reads a plan yaml (see eval/plans/), executes control/poison trials
+alternately, drains each to its oracle verdict with the same
+verify-until-PASS discipline as the demo, snapshots an evidence bundle,
+and freezes scorecard.json with measured drain throughput. Fails loudly;
+never invents numbers.
 """
 
 from __future__ import annotations
@@ -10,11 +12,14 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
 import click
 import yaml
+
+from offsetproof.ops.demo import _drain_until_pass
 
 
 def _sh(args: list[str], cwd: Path) -> str:
@@ -31,9 +36,11 @@ def _sh(args: list[str], cwd: Path) -> str:
 @click.option("--dry-run", is_flag=True, default=False)
 def main(config: str, out: str, dry_run: bool) -> None:
     plan = yaml.safe_load(Path(config).read_text(encoding="utf-8"))
-    # eval/plans/<name>.yaml -> plans -> eval -> src -> repo root
-    root = Path(config).resolve().parent.parent.parent.parent
+    # top-level eval/plans/<name>.yaml -> plans -> eval -> repo root
+    root = Path(config).resolve().parent.parent.parent
     out_dir = Path(out)
+    if not out_dir.is_absolute():
+        out_dir = root / out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
     scorecard: dict[str, Any] = {
         "plan": plan,
@@ -44,23 +51,38 @@ def main(config: str, out: str, dry_run: bool) -> None:
         click.echo(json.dumps(scorecard, indent=2))
         return
     seeds = [int(plan.get("seed", 42))]
-    for trial in range(int(plan.get("fault_trials", 0))):
+    n_trials = int(plan.get("fault_trials", 0))
+    orders = int(plan.get("events_per_trial", 10000)) // 4 or 200
+    for trial in range(n_trials):
         seed = seeds[0] + trial
+        scenario = "poison" if trial % 2 else "control"
         run_dir = out_dir / f"trial-{trial:03d}"
-        _sh([sys.executable, "-m", "offsetproof.producer", "--seed", str(seed),
-             "--orders", "200", "--out-dir", str(run_dir),
-             "--bootstrap", "localhost:29092"], root)
+        produce_cmd = [sys.executable, "-m", "offsetproof.producer",
+                       "--seed", str(seed), "--orders", str(orders),
+                       "--out-dir", str(run_dir),
+                       "--bootstrap", "localhost:29092"]
+        if scenario == "poison":
+            produce_cmd += ["--poison-every", "37"]
+        _sh(produce_cmd, root)
         manifest = json.loads((run_dir / "manifest.json").read_text())
-        _sh([sys.executable, "-m", "offsetproof.consumer", "--bootstrap",
-             "localhost:29092", "--max-messages",
-             str(manifest["attempted"])], root)
-        verify_out = _sh(
-            [sys.executable, "-m", "offsetproof.ops.verify", "--manifest",
-             str(run_dir / "manifest.json")], root)
-        verdict = "PASS" if "\nPASS" in verify_out else "FAIL"
+        t0 = time.time()
+        verdict = _drain_until_pass(root, run_dir, "localhost:29092")
+        if verdict != "PASS":
+            raise RuntimeError(
+                f"trial {trial} ({scenario}) did not reach PASS; "
+                "stopping instead of recording a partial trial")
+        drain_s = round(time.time() - t0, 1)
+        _sh([sys.executable, "-m", "offsetproof.ops.bundle", "--run-dir",
+             str(run_dir), "--bootstrap", "localhost:29092"], root)
+        _sh([sys.executable, "-m", "offsetproof.diagnose", "--mode", "rules",
+             "--run", str(run_dir)], root)
+        attempted = int(manifest["attempted"])
         scorecard["trials"].append(
-            {"trial": trial, "seed": seed, "verdict": verdict,
-             "run_id": manifest["run_id"]})
+            {"trial": trial, "seed": seed, "scenario": scenario,
+             "verdict": verdict, "run_id": manifest["run_id"],
+             "drain_seconds": drain_s,
+             "events_per_second": round(attempted / drain_s, 1)
+             if drain_s > 0 else None})
     passed = sum(1 for t in scorecard["trials"] if t["verdict"] == "PASS")
     scorecard["status"] = "complete"
     scorecard["summary"] = {"trials": len(scorecard["trials"]),

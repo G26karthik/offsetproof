@@ -8,6 +8,15 @@ from offsetproof import consumer
 
 
 @pytest.mark.unit
+def test_should_commit_batches_without_weakening_guarantee():
+    assert consumer.should_commit(0, 0.0, 100.0) is False
+    assert consumer.should_commit(49, 0.0, 1.0) is False
+    assert consumer.should_commit(50, 0.0, 1.0) is True
+    assert consumer.should_commit(7, 0.0, 5.1) is True
+    assert consumer.should_commit(7, 0.0, 4.9) is False
+
+
+@pytest.mark.unit
 def test_backoff_curve_caps_at_thirty():
     assert consumer.backoff_seconds(1) == 2.0
     assert consumer.backoff_seconds(2) == 4.0

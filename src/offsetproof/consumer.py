@@ -28,6 +28,27 @@ def backoff_seconds(attempt: int) -> float:
     return float(min(2.0**attempt, 30.0))
 
 
+COMMIT_EVERY = 50
+COMMIT_INTERVAL_SECONDS = 5.0
+
+
+def should_commit(committed: int, last_commit_at: float, now: float) -> bool:
+    """Batch the synchronous offset commit without weakening the guarantee.
+
+    A committed offset always covers only already-processed messages
+    (single-threaded, in-order), so committing every Nth message or every
+    few seconds preserves exactly the same promise as committing each one:
+    a crash redelivers at most the uncommitted tail, which the idempotent
+    sink absorbs.
+    """
+    if committed <= 0:
+        return False
+    return (
+        committed % COMMIT_EVERY == 0
+        or (now - last_commit_at) >= COMMIT_INTERVAL_SECONDS
+    )
+
+
 class ResilientConnection:
     """One logical DB handle that reopens itself after a transport failure.
 
@@ -137,6 +158,8 @@ def main(bootstrap: str, group_id: str, topic: str, dlq_topic: str,
     consumer.subscribe([topic], on_assign=on_assign, on_revoke=on_revoke)
     log_record("info", event="started", group=group_id, topic=topic)
     committed = 0
+    last_commit_at = time.monotonic()
+    last_msg = None
 
     try:
         while True:
@@ -218,8 +241,11 @@ def main(bootstrap: str, group_id: str, topic: str, dlq_topic: str,
                 metrics.DLQ_RECORDED.labels(run_id=run_id).inc()
                 if CRASH_AFTER_DB_COMMIT:
                     os._exit(137)  # noqa: SLOS - F6 deterministic test hook
-            consumer.commit(message=msg, asynchronous=False)
             committed += 1
+            last_msg = msg
+            if should_commit(committed, last_commit_at, time.monotonic()):
+                consumer.commit(message=msg, asynchronous=False)
+                last_commit_at = time.monotonic()
             log_record("info", event="committed", partition=msg.partition(),
                        offset=msg.offset(), kind=kind, detail=detail,
                        event_id=event.event_id if event else None)
@@ -230,6 +256,11 @@ def main(bootstrap: str, group_id: str, topic: str, dlq_topic: str,
     except KeyboardInterrupt:
         pass
     finally:
+        try:
+            if last_msg is not None:
+                consumer.commit(message=last_msg, asynchronous=False)
+        except Exception:  # noqa: BLE001 - shutdown commit is best-effort
+            pass
         consumer.close()
         try:
             store.conn.close()

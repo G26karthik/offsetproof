@@ -1,0 +1,11 @@
+# Pilot: scaled-down rehearsal of baseline.yaml (2 control + 2 poison).
+# The full 25-trial matrix in baseline.yaml remains explicitly future work;
+# this file exists so the harness is exercised end to end, not to pretend
+# the full study ran.
+seed: 100
+input_rates: [200]
+events_per_trial: 800
+fault_trials: 4
+control_trials: 0
+hold_window_seconds: 60
+lag_tolerance: 100

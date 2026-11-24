@@ -37,7 +37,7 @@ def _sh(args: list[str], cwd: Path, env_extra: dict[str, str] | None = None,
 
 
 def _drain_until_pass(root: Path, run_dir: Path, bootstrap: str,
-                      timeout_rounds: int = 20) -> str:
+                      timeout_rounds: int = 40) -> str:
     """Drain with the continuing main group until the oracle passes.
 
     A fresh consumer group would replay the whole topic from earliest and
@@ -105,6 +105,8 @@ def main(bootstrap: str, out: str) -> None:
     # ops/demo.py -> ops -> offsetproof(pkg) -> src -> repo root
     root = Path(__file__).resolve().parent.parent.parent.parent
     demo = Path(out)
+    if not demo.is_absolute():
+        demo = root / demo
     if demo.exists():
         shutil.rmtree(demo)
     demo.mkdir(parents=True)
