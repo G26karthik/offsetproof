@@ -30,6 +30,19 @@ def test_summarize_lag_skips_unknown():
 
 
 @pytest.mark.unit
+def test_build_snapshot_shape():
+    from offsetproof.collect import build_snapshot
+
+    snap = build_snapshot(
+        {0: 100, 1: 0}, {0: 90}, "g", "t", timestamp_utc="2026-11-24T00:00:00+00:00"
+    )
+    assert snap["p0_lag"] == 10
+    assert snap["p1_lag"] is None
+    assert snap["lag_total"] == 10
+    assert snap["topic"] == "t"
+
+
+@pytest.mark.unit
 def test_bundle_roundtrip(tmp_path):
     d = observe.write_bundle(
         tmp_path / "run-x",

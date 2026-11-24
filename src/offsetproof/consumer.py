@@ -23,6 +23,54 @@ DB_DELAY_SECONDS = float(os.environ.get("OFFSETPROOF_DB_DELAY_SECONDS", "0"))
 TRANSIENT_RETRY_LIMIT = int(os.environ.get("OFFSETPROOF_RETRY_LIMIT", "50"))
 
 
+def backoff_seconds(attempt: int) -> float:
+    """Bounded exponential backoff: 2, 4, 8, ... capped at 30s."""
+    return float(min(2.0**attempt, 30.0))
+
+
+class ResilientConnection:
+    """One logical DB handle that reopens itself after a transport failure.
+
+    A psycopg connection whose server went away never recovers on its own:
+    every further statement fails on the same dead socket. Retrying on a
+    dead handle only burns the retry budget, so each failed attempt closes
+    the handle and the next attempt dials fresh.
+    """
+
+    def __init__(self, connect: Any = None) -> None:
+        self._connect = connect or db.connect
+        self.conn: Any = self._connect()
+
+    def reset(self) -> None:
+        try:
+            self.conn.close()
+        except Exception:  # noqa: BLE001 - close is best-effort
+            pass
+        self.conn = self._connect()
+
+
+def with_retries(store: ResilientConnection, op: Any, what: str) -> Any:
+    """Run a DB op, reopening the handle on transport failure.
+
+    A dead handle fails every statement identically, so each failed attempt
+    resets the connection before backing off. Exhaustion raises: the caller
+    must not commit past a message whose write never landed.
+    """
+    retries = 0
+    while True:
+        try:
+            return op(store.conn)
+        except Exception as exc:  # noqa: BLE001 - transient path
+            retries += 1
+            log_record("warn", event="transient_retry", op=what,
+                       attempt=retries, error=str(exc))
+            if retries > TRANSIENT_RETRY_LIMIT:
+                log_record("error", event="retry_budget_exhausted", op=what)
+                raise
+            store.reset()
+            time.sleep(backoff_seconds(retries))
+
+
 def log_record(level: str, **fields: object) -> None:
     print(json.dumps({"level": level, **fields}), flush=True)
 
@@ -75,7 +123,7 @@ def main(bootstrap: str, group_id: str, topic: str, dlq_topic: str,
             "client.id": "offsetproof-dlq",
         }
     )
-    conn = db.connect()
+    store = ResilientConnection()
 
     def on_assign(c: Any, partitions: list[Any]) -> None:
         metrics.REBALANCES.labels(group_id=group_id).inc()
@@ -130,19 +178,11 @@ def main(bootstrap: str, group_id: str, topic: str, dlq_topic: str,
             if kind == "valid" and event is not None:
                 if DB_DELAY_SECONDS:  # F2 slow-sink hook (evaluator-side only)
                     time.sleep(DB_DELAY_SECONDS)
-                retries = 0
-                while True:
-                    try:
-                        outcome = db.apply_event(conn, event, table)
-                        break
-                    except Exception as exc:  # noqa: BLE001 - transient path
-                        retries += 1
-                        log_record("warn", event="transient_retry",
-                                   attempt=retries, error=str(exc))
-                        if retries > TRANSIENT_RETRY_LIMIT:
-                            log_record("error", event="retry_budget_exhausted")
-                            raise
-                        time.sleep(min(2.0 ** retries, 30.0))
+                outcome = with_retries(
+                    store,
+                    lambda c: db.apply_event(c, event, table),
+                    "apply_event",
+                )
                 if CRASH_AFTER_DB_COMMIT and outcome == db.APPLY_OK:
                     os._exit(137)  # noqa: SLOS - F6 deterministic test hook
                 if outcome == db.APPLY_INVALID_TRANSITION:
@@ -164,9 +204,14 @@ def main(bootstrap: str, group_id: str, topic: str, dlq_topic: str,
                     dlq_id = envelope_event_id
                 else:
                     dlq_id = f"undecodable-{msg.partition()}-{msg.offset()}"
-                db.record_dlq(conn, run_id,
-                              event.order_id if event else None,
-                              dlq_id, detail or kind, raw_payload)
+                with_retries(
+                    store,
+                    lambda c: db.record_dlq(
+                        c, run_id, event.order_id if event else None,
+                        dlq_id, detail or kind, raw_payload,
+                    ),
+                    "record_dlq",
+                )
                 dlq.produce(dlq_topic, key=msg.key(),
                             value=json.dumps(raw_payload).encode())
                 dlq.flush(60)
@@ -186,7 +231,10 @@ def main(bootstrap: str, group_id: str, topic: str, dlq_topic: str,
         pass
     finally:
         consumer.close()
-        conn.close()
+        try:
+            store.conn.close()
+        except Exception:  # noqa: BLE001 - shutdown is best-effort
+            pass
 
 
 if __name__ == "__main__":
