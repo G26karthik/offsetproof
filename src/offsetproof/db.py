@@ -50,7 +50,6 @@ def apply_event(conn: psycopg.Connection, event: events.OrderEvent) -> str:
                 ),
             )
             if cur.fetchone() is None:
-                conn.rollback()
                 return APPLY_DUPLICATE
             cur.execute(
                 "SELECT status FROM order_projection WHERE order_id = %s FOR UPDATE",
@@ -60,7 +59,6 @@ def apply_event(conn: psycopg.Connection, event: events.OrderEvent) -> str:
             current = row[0] if row else events.STATUS_NONE
             nxt = events.next_status(current, event.event_type)
             if nxt is None:
-                conn.rollback()
                 return APPLY_INVALID_TRANSITION
             cur.execute(
                 "INSERT INTO order_projection "

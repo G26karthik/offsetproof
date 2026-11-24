@@ -38,9 +38,12 @@ def main(manifest: str) -> None:
 
     valid_missing = sorted(valid_ids - persisted)
     invalid_missing = sorted(invalid_ids - dlq)
-    # Total applied rows vs distinct applied valid events: any surplus means
-    # the same business effect was applied twice (idempotence breach).
-    duplicate_effects = len(persisted & valid_ids) - len(valid_ids & persisted)
+    # Phantom rows: persisted IDs the producer never acknowledged. A duplicate
+    # redelivery can never create these (unique event_id), so any phantom is
+    # a real pipeline bug, not at-least-once noise. Duplicate-effect counting
+    # lives in the consumer outcome metrics in the bundle, since this table
+    # dedupes by construction.
+    phantom_persisted = sorted(persisted - valid_ids)
     projection_mismatch = {
         oid: exp for oid, exp in m.get("expected_final", {}).items()
         if projection.get(oid, {}).get("status") != exp
@@ -53,11 +56,11 @@ def main(manifest: str) -> None:
         "distinct_dlq": len(invalid_ids & dlq),
         "valid_missing": valid_missing,
         "invalid_missing": invalid_missing,
-        "duplicate_database_effects": duplicate_effects,
+        "phantom_persisted": phantom_persisted,
         "projection_mismatch": projection_mismatch,
     }
     click.echo(json.dumps(report, indent=2))
-    if valid_missing or invalid_missing or projection_mismatch or duplicate_effects:
+    if valid_missing or invalid_missing or projection_mismatch or phantom_persisted:
         click.echo("FAIL", err=True)
         sys.exit(1)
     if not valid_ids:

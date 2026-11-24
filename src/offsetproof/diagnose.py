@@ -13,8 +13,6 @@ from pathlib import Path
 
 import click
 
-from .events import utc_now_iso  # noqa: F401  (re-export for report timestamps)
-
 
 def diagnose_bundle(bundle_dir: Path) -> dict:
     metrics_path = bundle_dir / "metrics.csv"
