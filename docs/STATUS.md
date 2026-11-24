@@ -26,8 +26,10 @@
 - run-16 F2 slow sink (0.25s DB delay, 394 events): PASS; DB latency, not
   broker, was the bottleneck by construction.
 - demo/ (control 783 + poison 777): PASS/PASS in 35s with bundles.
-- Remaining live work: none for Gates A–C. Gate D real-LLM comparison
-  needs a key (stubs verified); benchmark matrix is code-complete, unrun.
+- Full study running: baseline.yaml (20 fault + 5 control, 10k events
+  each) on the single-node stack; pilot 4/4 proved the harness.
+- Remaining: score the 25-trial comparison (agent calls need the user's
+  key, already provided), README numbers refresh, final push.
 - Bugs caught by measurement: cross-run order_id collision (per-run
   namespace), oracle run filter, sink phantom rows (exception rollback),
   UUID-only DLQ column (TEXT), DLQ run attribution (envelope run_id),

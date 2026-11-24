@@ -130,6 +130,12 @@ excuse for a weak baseline — tracked as a risk in `docs/STATUS.md`.
 
 ## Log (newest first)
 
+- **2026-11-24 — S12.** Full-scale mode: shared-consumer drain harness
+  (kills between trials caused post-kill join stalls — one consumer per
+  session now), output dirs anchored to repo root, producer fails loudly
+  on partial ack, benchmark alternates control/poison with throughput
+  measurement, per-trial log splitting for the comparison. Full 25-trial
+  study launched on the single-node profile.
 - **2026-11-24 — S11.** n=4 blinded comparison (gpt-4o-mini). Agent: 1/2
   faults (bad_payload hit with cited evidence on the rich bundle), 1
   overconfident miss on the thin bundle, 2/2 correct abstentions on
