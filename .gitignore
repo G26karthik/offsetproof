@@ -2,6 +2,10 @@ __pycache__/
 *.pyc
 .venv/
 .tools/
+data/
+results/run-*/
+.pytest_cache/
+pytest-of-saita/
 .env
 results/latest
 results/private/
