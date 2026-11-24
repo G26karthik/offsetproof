@@ -130,6 +130,16 @@ excuse for a weak baseline — tracked as a risk in `docs/STATUS.md`.
 
 ## Log (newest first)
 
+- **2026-11-24 — S2.** Ponytail adopted (plugin `DietrichGebert/ponytail`
+  5.3.2 found in Claude Code cache; main + review skills read). Ran a
+  ponytail-review over the Gate A commit: caught a real oracle tautology
+  (`duplicate_effects` was identically zero — replaced with
+  `phantom_persisted`), a `conn.rollback()` fighting the transaction
+  context manager, an unverified `cub` healthcheck, topics never created,
+  and one dead import. Fixed + committed as `e99f5a9`. Tension resolved:
+  ponytail governs code shape (smallest complete diff), PRD governs scope.
+  Python: no registry entries, no launcher hits — no system interpreter;
+  user to supply venv path or install 3.12. Docker daemon still down.
 - **2026-11-24 — S1 (close).** Scaffold + Gate A code committed locally as
   `362b9a9` (scaffold) and `6a3810d` (contract/workload/producer/consumer/
   sink/oracle/tests). Nothing executed: no Python and no Docker daemon were
