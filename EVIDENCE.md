@@ -13,6 +13,8 @@
 | run-15 F5 broker kill | PASS, RF=3/minISR=2, ISR restored | 3-node, seed 54 |
 | run-16 slow sink | PASS 394/394 at 0.25s DB delay | seed 55 |
 | demo control + poison | PASS/PASS in 35s with bundles | seeds 100/101 |
+| Blinded rules vs agent (n=1, poison) | rules: ambiguous (correct abstention); agent (gpt-4o-mini): stalled_consumer/high (WRONG) | demo fault-poison bundle, 2026-11-24 |
+| Agent evidence precision | 1.0 cited, 0.0 correct family | failure is interpretation, not fabrication |
 | Sink regression tests | 4 passed, real Postgres | `tests/integration/test_sink.py` |
 | Unit tests | VERIFIED 27 passed (incl. 9 Gate C rules) | `pytest -m unit`, CPython 3.12.16 |
 | Lint + types | clean | ruff + mypy strict, 17 files |

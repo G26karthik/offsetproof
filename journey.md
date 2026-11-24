@@ -130,6 +130,14 @@ excuse for a weak baseline — tracked as a risk in `docs/STATUS.md`.
 
 ## Log (newest first)
 
+- **2026-11-24 — S10.** First live agent comparison (n=1, poison run):
+  rules said ambiguous/low (correct — one post-drain snapshot cannot
+  convict); gpt-4o-mini said stalled_consumer/high (wrong, overconfident).
+  Both cited real telemetry, so the failure is interpretation, not
+  fabrication — the publishable negative result the PRD pre-registered.
+  Engineering consequence: bundles must sample DURING drains, not once
+  after; single-snapshot diagnosis is the identified weakness on both
+  sides. No metric was edited, hidden, or re-run to look better.
 - **2026-11-24 — S9.** Provider keys wired to the user's names
   (OPENAI_API_KEY / ANTHROPIC_API_KEY, values never touched); agent mode
   now runs the real pipeline and writes incident_agent.json. History

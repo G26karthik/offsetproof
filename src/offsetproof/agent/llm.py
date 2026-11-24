@@ -27,7 +27,41 @@ class HttpAdapter:
     OPENAI_API_KEY (OpenAI-compatible endpoint) or ANTHROPIC_API_KEY
     (Anthropic messages endpoint). The key value is never logged."""
 
+    @staticmethod
+    def _load_env_file() -> None:
+        """Load KEY=VALUE lines from a user-owned .env into this process.
+
+        Lookup order: $OFFSETPROOF_ENV_FILE, <repo>/.env,
+        <repo>/../.env (the workspace root, where the owner keeps theirs).
+        Values are never printed or logged anywhere in this codebase.
+        """
+        from pathlib import Path
+
+        here = Path(__file__).resolve()
+        candidates = []
+        explicit = os.environ.get("OFFSETPROOF_ENV_FILE", "")
+        if explicit:
+            candidates.append(Path(explicit))
+        candidates.append(here.parent.parent.parent.parent / ".env")
+        candidates.append(here.parent.parent.parent.parent.parent / ".env")
+        for path in candidates:
+            try:
+                text = path.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            for line in text.splitlines():
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                key = key.strip()
+                value = value.strip().strip("\"'")
+                if key and value and key not in os.environ:
+                    os.environ[key] = value
+            return
+
     def __init__(self) -> None:
+        self._load_env_file()
         openai_key = os.environ.get("OPENAI_API_KEY", "")
         anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
         if openai_key:
