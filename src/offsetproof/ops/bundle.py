@@ -32,7 +32,10 @@ def append_snapshot(
         with open(metrics_path, encoding="utf-8", newline="") as fh:
             existing = [dict(r) for r in csv.DictReader(fh)]
     existing.append(row)
-    metrics_path.write_text(render_metrics_csv(existing), encoding="utf-8")
+    # newline="": the csv renderer already emits \r\n; text-mode translation
+    # would double every line break on Windows and corrupt row counts.
+    with open(metrics_path, "w", encoding="utf-8", newline="") as fh:
+        fh.write(render_metrics_csv(existing))
     return metrics_path
 
 

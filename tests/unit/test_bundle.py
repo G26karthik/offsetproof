@@ -1,7 +1,5 @@
 """Unit tests: bundle capture and benchmark planning (no broker)."""
 
-import json
-
 import pytest
 from click.testing import CliRunner
 
