@@ -133,6 +133,12 @@ def main(seed: int, orders: int, skew_hot_fraction: float, poison_every: int,
         encoding="utf-8",
     )
     click.echo(f"{run_id}: acked={len(acked_set)} failed={len(failed)}")
+    if failed or len(acked_set) != len(wl.stream):
+        # A workload that did not fully acknowledge is not a workload:
+        # fail loudly so harnesses never test against a partial stream.
+        raise SystemExit(
+            f"incomplete acknowledgement: {len(acked_set)}/{len(wl.stream)}"
+        )
 
 
 if __name__ == "__main__":
