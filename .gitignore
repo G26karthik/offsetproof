@@ -3,7 +3,8 @@ __pycache__/
 .venv/
 .tools/
 data/
-results/run-*/
+results/
+src/results/
 .pytest_cache/
 pytest-of-saita/
 .env
