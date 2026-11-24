@@ -139,6 +139,15 @@ excuse for a weak baseline — tracked as a risk in `docs/STATUS.md`.
   and the producer now fails loudly on partial ack. Demo runs end to end
   (PASS/PASS, 35s) after fixing its fresh-group replay bug — groups
   continue, topics don't restart. Repo public, history pushed.
+- **2026-11-24 — S8.** Demo PASS/PASS in 35s with bundles. Caught myself
+  committing run artifacts AND two ground-truth files to the public repo
+  (broad git add after a buggy demo run wrote under src/results/). Removed
+  from tracking immediately and pushed the cleanup; blobs remain in one
+  superseded commit. Impact contained: those two seeds' truth is public,
+  all future evaluations use fresh seeds — and the incident is why the
+  investigator never reads results/private. Lesson recorded: never broad-add
+  a tree I didn't clean (git skill rule), verify `git status` names only
+  intended files before every commit.
 - **2026-11-24 — S5.** Poison saga closed. run-08 PASS (2911 valid +
   205/205 DLQ, zero missing/phantoms). Root causes, in order: (1) UUID-only
   DLQ column crashed on synthetic ids; (2) run-scoped oracle couldn't see
