@@ -130,6 +130,14 @@ excuse for a weak baseline — tracked as a risk in `docs/STATUS.md`.
 
 ## Log (newest first)
 
+- **2026-11-24 — S11.** n=4 blinded comparison (gpt-4o-mini). Agent: 1/2
+  faults (bad_payload hit with cited evidence on the rich bundle), 1
+  overconfident miss on the thin bundle, 2/2 correct abstentions on
+  controls. Rules: 0/2 faults, never confidently wrong, but a
+  false-positive tendency (slow_sink on healthy draining traffic — needs
+  the latency signal the PRD already names). Cites real on both sides
+  (precision 1.0). Pilot benchmark 4/4 PASS at ~51 ev/s for control and
+  poison alike. Full 25-trial study remains explicit future work.
 - **2026-11-24 — S10.** First live agent comparison (n=1, poison run):
   rules said ambiguous/low (correct — one post-drain snapshot cannot
   convict); gpt-4o-mini said stalled_consumer/high (wrong, overconfident).

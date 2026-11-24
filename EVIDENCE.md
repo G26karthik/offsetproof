@@ -15,6 +15,8 @@
 | demo control + poison | PASS/PASS in 35s with bundles | seeds 100/101 |
 | Blinded rules vs agent (n=1, poison) | rules: ambiguous (correct abstention); agent (gpt-4o-mini): stalled_consumer/high (WRONG) | demo fault-poison bundle, 2026-11-24 |
 | Agent evidence precision | 1.0 cited, 0.0 correct family | failure is interpretation, not fabrication |
+| Blinded n=4 (2 control + 2 poison) | rules top-1 0.0 (2 ambiguous, 2 slow_sink incl. 1 false positive on healthy traffic); agent top-1 0.25 (1 bad_payload hit, 1 overconfident stalled_consumer miss, 2 correct control abstentions); citation precision 1.0 both | study + demo bundles, gpt-4o-mini |
+| Pilot benchmark (4 trials) | 4/4 PASS, ~51 ev/s control and poison | eval/plans/pilot.yaml |
 | Sink regression tests | 4 passed, real Postgres | `tests/integration/test_sink.py` |
 | Unit tests | VERIFIED 27 passed (incl. 9 Gate C rules) | `pytest -m unit`, CPython 3.12.16 |
 | Lint + types | clean | ruff + mypy strict, 17 files |
