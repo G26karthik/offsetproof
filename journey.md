@@ -130,6 +130,13 @@ excuse for a weak baseline — tracked as a risk in `docs/STATUS.md`.
 
 ## Log (newest first)
 
+- **2026-11-24 — S9.** Provider keys wired to the user's names
+  (OPENAI_API_KEY / ANTHROPIC_API_KEY, values never touched); agent mode
+  now runs the real pipeline and writes incident_agent.json. History
+  purged with filter-branch (21 commits kept, 313→242 objects, old blob
+  IDs gone) and force-pushed — decision: a day-old sole-contributor repo
+  deserves a clean past; no clones existed to break. No .env found in the
+  project folders; keys remain the user's to place.
 - **2026-11-24 — S7.** All fault runs green: F6 (776/776 after kill between
   DB commit and offset commit), DB-down 45s (reconnect fix proven — pre-fix
   code stranded at 439/1558), hot partition (p0 lag 1783 vs ~270, all
