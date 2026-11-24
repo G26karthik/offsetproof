@@ -25,9 +25,15 @@ def main(manifest: str) -> None:
     invalid_ids = set(m["invalid_ids"])
     conn = db.connect()
     with conn.cursor() as cur:
-        cur.execute("SELECT event_id::text FROM processed_events")
+        cur.execute(
+            "SELECT event_id::text FROM processed_events WHERE run_id = %s",
+            (m["run_id"],),
+        )
         persisted = {r[0] for r in cur.fetchall()}
-        cur.execute("SELECT DISTINCT event_id::text FROM dlq_records")
+        cur.execute(
+            "SELECT DISTINCT event_id::text FROM dlq_records WHERE run_id = %s",
+            (m["run_id"],),
+        )
         dlq = {r[0] for r in cur.fetchall()}
         cur.execute(
             "SELECT order_id, status, last_sequence FROM order_projection"

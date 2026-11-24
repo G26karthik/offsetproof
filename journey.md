@@ -130,6 +130,18 @@ excuse for a weak baseline — tracked as a risk in `docs/STATUS.md`.
 
 ## Log (newest first)
 
+- **2026-11-24 — S4.** F1 crash/restart PASS (3095/3095 after SIGKILL).
+  run-02 taught a real lesson: same `order-{i}` ids across runs collided in
+  the long-lived projection and failed the oracle correctly — fixed with
+  per-run namespaces. Finance track: added synthetic payment-ledger profile
+  (INITIATED→AUTHORIZED→CAPTURED→SETTLED, REVERSED/REFUNDED, double-settle
+  rejected). Real-data track: imported UCI Online Retail II (1M real
+  transactions, CC BY 4.0, SHA256 recorded); 3000-invoice slice ran
+  2502 valid + 498 real cancels to DLQ. That run caught a genuine sink bug:
+  rejected events left phantom rows (my earlier "cleanup" had removed the
+  rollback that wasn't a no-op) — fixed with exception-driven rollback and
+  three Postgres regression tests. Re-ran: PASS, zero phantoms. Oracle now
+  run-scoped.
 - **2026-11-24 — S3.** Sandbox installs authorized; bootstrapped Python
   without touching the system: uv binary via node egress into
   `.tools/uv-bin`, managed CPython 3.12.16 into `.tools/python`, project

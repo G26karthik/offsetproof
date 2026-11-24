@@ -13,6 +13,7 @@ import click
 from confluent_kafka import Producer
 
 from . import metrics, workload as workload_mod
+from .events import OrderEvent
 
 
 def make_producer(bootstrap: str) -> Producer:
@@ -34,19 +35,43 @@ def make_producer(bootstrap: str) -> Producer:
 @click.option("--skew-hot-fraction", type=float, default=0.0)
 @click.option("--poison-every", type=int, default=0)
 @click.option("--rate", type=float, default=0.0, help="Max msgs/sec, 0 = unthrottled")
+@click.option("--profile", type=click.Choice(["orders", "ledger"]),
+              default="orders")
+@click.option("--events-file", default=None,
+              help="Prebuilt event JSONL (real-data import) instead of generating")
 @click.option("--topic", default=os.environ.get("ORDERS_TOPIC", "orders.events"))
 @click.option("--bootstrap", default="localhost:29092")
 @click.option("--out-dir", default="results/latest")
 def main(seed: int, orders: int, skew_hot_fraction: float, poison_every: int,
-         rate: float, topic: str, bootstrap: str, out_dir: str) -> None:
+         rate: float, topic: str, bootstrap: str, out_dir: str,
+         profile: str, events_file: str | None) -> None:
     run_id = f"run-{uuid.uuid4().hex[:12]}"
-    wl = workload_mod.generate_workload(
-        seed=seed,
-        n_orders=orders,
-        run_id=run_id,
-        skew_hot_fraction=skew_hot_fraction,
-        poison_every=poison_every,
-    )
+    dataset_provenance: dict[str, Any] | None = None
+    if events_file:
+        stream = []
+        with open(events_file, encoding="utf-8") as fh:
+            for line in fh:
+                d = json.loads(line)
+                d["run_id"] = run_id
+                stream.append(OrderEvent(**d))
+        valid_ids, dlq_ids, final = workload_mod.replay_stream(stream, profile)
+        wl = workload_mod.Workload(
+            run_id=run_id, seed=seed, stream=stream,
+            expected_valid_ids=valid_ids, expected_dlq_ids=dlq_ids,
+            expected_final=final,
+        )
+        prov_path = Path(events_file).parent / "provenance.json"
+        if prov_path.exists():
+            dataset_provenance = json.loads(prov_path.read_text(encoding="utf-8"))
+    else:
+        wl = workload_mod.generate_workload(
+            seed=seed,
+            n_orders=orders,
+            run_id=run_id,
+            skew_hot_fraction=skew_hot_fraction,
+            poison_every=poison_every,
+            profile=profile,
+        )
     producer = make_producer(bootstrap)
     acked: list[str] = []
     failed: list[dict[str, Any]] = []
@@ -79,6 +104,9 @@ def main(seed: int, orders: int, skew_hot_fraction: float, poison_every: int,
         "run_id": run_id,
         "seed": seed,
         "n_orders": orders,
+        "profile": profile,
+        "events_file": events_file,
+        "dataset": dataset_provenance,
         "topic": topic,
         "valid_ids": sorted(acked_set & wl.expected_valid_ids),
         "invalid_ids": sorted(acked_set & wl.expected_dlq_ids),

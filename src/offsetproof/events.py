@@ -22,6 +22,30 @@ EVENT_TYPES = frozenset(
     {ORDER_CREATED, PAYMENT_RECORDED, ITEM_PACKED, ORDER_SHIPPED, ORDER_CANCELLED}
 )
 
+# Synthetic payment-ledger profile: money-movement lifecycle for the same
+# pipeline. No real money, no PII, no employer data — the point is that
+# ledger posting has the same at-least-once + idempotent-apply shape as
+# order projection, with stricter reconciliation (every cent accounted for).
+PAYMENT_INITIATED = "PAYMENT_INITIATED"
+PAYMENT_AUTHORIZED = "PAYMENT_AUTHORIZED"
+PAYMENT_CAPTURED = "PAYMENT_CAPTURED"
+PAYMENT_SETTLED = "PAYMENT_SETTLED"
+PAYMENT_REVERSED = "PAYMENT_REVERSED"
+PAYMENT_REFUNDED = "PAYMENT_REFUNDED"
+
+LEDGER_EVENT_TYPES = frozenset(
+    {
+        PAYMENT_INITIATED,
+        PAYMENT_AUTHORIZED,
+        PAYMENT_CAPTURED,
+        PAYMENT_SETTLED,
+        PAYMENT_REVERSED,
+        PAYMENT_REFUNDED,
+    }
+)
+
+EVENT_TYPES = EVENT_TYPES | LEDGER_EVENT_TYPES
+
 # Status of an order that has no applied events yet.
 STATUS_NONE = "NONE"
 STATUS_CREATED = "CREATED"
@@ -82,9 +106,36 @@ class OrderEvent:
         }
 
 
-def next_status(current: str, event_type: str) -> str | None:
+LEDGER_TRANSITIONS: dict[str, dict[str, str]] = {
+    STATUS_NONE: {PAYMENT_INITIATED: "INITIATED"},
+    "INITIATED": {
+        PAYMENT_AUTHORIZED: "AUTHORIZED",
+        PAYMENT_REVERSED: "REVERSED",
+    },
+    "AUTHORIZED": {
+        PAYMENT_CAPTURED: "CAPTURED",
+        PAYMENT_REVERSED: "REVERSED",
+    },
+    "CAPTURED": {
+        PAYMENT_SETTLED: "SETTLED",
+        PAYMENT_REVERSED: "REVERSED",
+    },
+    "SETTLED": {PAYMENT_REFUNDED: "REFUNDED"},
+    "REVERSED": {},
+    "REFUNDED": {},
+}
+
+PROFILES: dict[str, dict[str, dict[str, str]]] = {
+    "orders": TRANSITIONS,
+    "ledger": LEDGER_TRANSITIONS,
+}
+
+
+def next_status(
+    current: str, event_type: str, table: dict[str, dict[str, str]] | None = None
+) -> str | None:
     """Return the status after applying event_type, or None if invalid."""
-    return TRANSITIONS.get(current, {}).get(event_type)
+    return (table or TRANSITIONS).get(current, {}).get(event_type)
 
 
 def validate_event(raw: Any) -> tuple[OrderEvent | None, str | None]:

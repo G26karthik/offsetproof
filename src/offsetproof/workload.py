@@ -17,7 +17,14 @@ from .events import (
     ORDER_CANCELLED,
     ORDER_CREATED,
     ORDER_SHIPPED,
+    PAYMENT_AUTHORIZED,
+    PAYMENT_CAPTURED,
+    PAYMENT_INITIATED,
     PAYMENT_RECORDED,
+    PAYMENT_REFUNDED,
+    PAYMENT_REVERSED,
+    PAYMENT_SETTLED,
+    PROFILES,
     STATUS_CANCELLED,
     STATUS_CREATED,
     STATUS_NONE,
@@ -29,12 +36,32 @@ from .events import (
 FULL_LIFECYCLE = [ORDER_CREATED, PAYMENT_RECORDED, ITEM_PACKED, ORDER_SHIPPED]
 CANCELLED_LIFECYCLE = [ORDER_CREATED, PAYMENT_RECORDED, ORDER_CANCELLED]
 
+LEDGER_SETTLE = [
+    PAYMENT_INITIATED,
+    PAYMENT_AUTHORIZED,
+    PAYMENT_CAPTURED,
+    PAYMENT_SETTLED,
+]
+LEDGER_REVERSE = [PAYMENT_INITIATED, PAYMENT_AUTHORIZED, PAYMENT_REVERSED]
+
+# profile -> (main lifecycle, early-terminal lifecycle)
+LIFECYCLE_SETS = {
+    "orders": (FULL_LIFECYCLE, CANCELLED_LIFECYCLE),
+    "ledger": (LEDGER_SETTLE, LEDGER_REVERSE),
+}
+
 _FINAL_STATUS = {
     ORDER_CREATED: STATUS_CREATED,
     PAYMENT_RECORDED: "PAID",
     ITEM_PACKED: "PACKED",
     ORDER_SHIPPED: "SHIPPED",
     ORDER_CANCELLED: STATUS_CANCELLED,
+    PAYMENT_INITIATED: "INITIATED",
+    PAYMENT_AUTHORIZED: "AUTHORIZED",
+    PAYMENT_CAPTURED: "CAPTURED",
+    PAYMENT_SETTLED: "SETTLED",
+    PAYMENT_REVERSED: "REVERSED",
+    PAYMENT_REFUNDED: "REFUNDED",
 }
 
 
@@ -60,24 +87,35 @@ def generate_workload(
     skew_hot_fraction: float = 0.0,
     poison_every: int = 0,
     cancel_fraction: float = 0.1,
+    namespace: str | None = None,
+    profile: str = "orders",
 ) -> Workload:
     """Build a deterministic interleaved stream plus replayed expectations.
 
-    skew_hot_fraction: share of orders mapped to order id "hot-0", creating
+    skew_hot_fraction: share of orders mapped to one hot key, creating
     key skew toward one actual partition (routing verified, not assumed).
     poison_every: every Nth sent record is replaced by an invalid record
     with a fresh event_id.
+    namespace: prefixes every order_id (defaults to run_id). The DB
+    projection outlives any single run, so unprefixed ids from two runs
+    would collide and falsely fail the oracle.
     """
+    if profile not in PROFILES:
+        raise ValueError(f"unknown profile: {profile}")
+    ns = namespace or run_id
+    main_cycle, early_cycle = LIFECYCLE_SETS[profile]
     rng = random.Random(seed)
     per_order_types: dict[str, list[str]] = {}
     for i in range(n_orders):
         if skew_hot_fraction > 0 and rng.random() < skew_hot_fraction:
-            order_id = "hot-0"
+            order_id = f"{ns}:hot-0"
         else:
-            order_id = f"order-{i:06d}"
+            order_id = f"{ns}:order-{i:06d}"
         lifecycle = (
-            CANCELLED_LIFECYCLE if rng.random() < cancel_fraction else FULL_LIFECYCLE
+            early_cycle if rng.random() < cancel_fraction else main_cycle
         )
+        if profile == "ledger" and rng.random() < 0.05:
+            lifecycle = [*LEDGER_SETTLE, PAYMENT_REFUNDED]
         per_order_types.setdefault(order_id, []).extend(lifecycle)
 
     # Per-order queues of valid events with deterministic ids.
@@ -130,19 +168,38 @@ def generate_workload(
         else:
             stream.append(ev)
 
-    # Replay the send stream to derive expectations.
-    wl = Workload(run_id=run_id, seed=seed, stream=stream)
+    valid_ids, dlq_ids, final = replay_stream(stream, profile)
+    return Workload(
+        run_id=run_id,
+        seed=seed,
+        stream=stream,
+        expected_valid_ids=valid_ids,
+        expected_dlq_ids=dlq_ids,
+        expected_final=final,
+    )
+
+
+def replay_stream(
+    stream: list[OrderEvent], profile: str
+) -> tuple[set[str], set[str], dict[str, str]]:
+    """Replay any send stream through the profile state machine.
+
+    Shared by the synthetic generator and the real-data importer, so both
+    get expectations from the same code the oracle checks against.
+    """
+    table = PROFILES[profile]
+    valid_ids: set[str] = set()
+    dlq_ids: set[str] = set()
     state: dict[str, str] = {}
     for ev in stream:
         if ev.schema_version != 1 or ev.event_type not in _FINAL_STATUS:
-            wl.expected_dlq_ids.add(ev.event_id)
+            dlq_ids.add(ev.event_id)
             continue
         current = state.get(ev.order_id, STATUS_NONE)
-        nxt = next_status(current, ev.event_type)
+        nxt = next_status(current, ev.event_type, table)
         if nxt is None:
-            wl.expected_dlq_ids.add(ev.event_id)
+            dlq_ids.add(ev.event_id)
             continue
-        wl.expected_valid_ids.add(ev.event_id)
+        valid_ids.add(ev.event_id)
         state[ev.order_id] = nxt
-    wl.expected_final = state
-    return wl
+    return valid_ids, dlq_ids, state

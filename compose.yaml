@@ -8,6 +8,7 @@ services:
     container_name: offsetproof-kafka
     ports:
       - "9092:9092"
+      - "29092:29092"
     environment:
       CLUSTER_ID: offsetproof-kraft-001
       KAFKA_NODE_ID: 1

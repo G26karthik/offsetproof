@@ -29,55 +29,76 @@ def connect() -> psycopg.Connection:
     return psycopg.connect(dsn())
 
 
-def apply_event(conn: psycopg.Connection, event: events.OrderEvent) -> str:
+class _NegativeOutcome(Exception):
+    """Control flow: a terminal non-error outcome. Never escapes this module."""
+
+    def __init__(self, outcome: str) -> None:
+        super().__init__(outcome)
+        self.outcome = outcome
+
+
+def apply_event(
+    conn: psycopg.Connection,
+    event: events.OrderEvent,
+    transitions: dict[str, dict[str, str]] | None = None,
+) -> str:
     """Insert event_id + apply transition atomically.
 
     Returns APPLY_OK / APPLY_DUPLICATE / APPLY_INVALID_TRANSITION.
+    Both negative paths roll the transaction back: a rejected event must
+    leave no trace in processed_events, or the oracle's phantom check
+    cannot distinguish pipeline bugs from redelivery noise.
     Raises on transient DB errors (caller retries; nothing was committed).
     """
-    with conn.transaction():
-        with conn.cursor() as cur:
-            cur.execute(
-                "INSERT INTO processed_events "
-                "(event_id, run_id, order_id, sequence_number, event_type) "
-                "VALUES (%s, %s, %s, %s, %s) ON CONFLICT DO NOTHING "
-                "RETURNING event_id",
-                (
-                    event.event_id,
-                    event.run_id,
-                    event.order_id,
-                    event.sequence_number,
-                    event.event_type,
-                ),
-            )
-            if cur.fetchone() is None:
-                return APPLY_DUPLICATE
-            cur.execute(
-                "SELECT status FROM order_projection WHERE order_id = %s FOR UPDATE",
-                (event.order_id,),
-            )
-            row = cur.fetchone()
-            current = row[0] if row else events.STATUS_NONE
-            nxt = events.next_status(current, event.event_type)
-            if nxt is None:
-                return APPLY_INVALID_TRANSITION
-            cur.execute(
-                "INSERT INTO order_projection "
-                "(order_id, status, last_sequence, last_event_id) "
-                "VALUES (%s, %s, %s, %s) "
-                "ON CONFLICT (order_id) DO UPDATE SET status = %s, "
-                "last_sequence = %s, last_event_id = %s, "
-                "updated_at_utc = now()",
-                (
-                    event.order_id,
-                    nxt,
-                    event.sequence_number,
-                    event.event_id,
-                    nxt,
-                    event.sequence_number,
-                    event.event_id,
-                ),
-            )
+    try:
+        with conn.transaction():
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO processed_events "
+                    "(event_id, run_id, order_id, sequence_number, event_type) "
+                    "VALUES (%s, %s, %s, %s, %s) ON CONFLICT DO NOTHING "
+                    "RETURNING event_id",
+                    (
+                        event.event_id,
+                        event.run_id,
+                        event.order_id,
+                        event.sequence_number,
+                        event.event_type,
+                    ),
+                )
+                if cur.fetchone() is None:
+                    raise _NegativeOutcome(APPLY_DUPLICATE)
+                cur.execute(
+                    "SELECT status FROM order_projection "
+                    "WHERE order_id = %s FOR UPDATE",
+                    (event.order_id,),
+                )
+                row = cur.fetchone()
+                current = row[0] if row else events.STATUS_NONE
+                nxt = events.next_status(
+                    current, event.event_type, transitions or events.TRANSITIONS
+                )
+                if nxt is None:
+                    raise _NegativeOutcome(APPLY_INVALID_TRANSITION)
+                cur.execute(
+                    "INSERT INTO order_projection "
+                    "(order_id, status, last_sequence, last_event_id) "
+                    "VALUES (%s, %s, %s, %s) "
+                    "ON CONFLICT (order_id) DO UPDATE SET status = %s, "
+                    "last_sequence = %s, last_event_id = %s, "
+                    "updated_at_utc = now()",
+                    (
+                        event.order_id,
+                        nxt,
+                        event.sequence_number,
+                        event.event_id,
+                        nxt,
+                        event.sequence_number,
+                        event.event_id,
+                    ),
+                )
+    except _NegativeOutcome as neg:
+        return neg.outcome
     return APPLY_OK
 
 

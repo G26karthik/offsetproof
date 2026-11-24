@@ -1,5 +1,12 @@
 # EVIDENCE — implemented vs measured vs proposed
 
+| run-01 baseline oracle | PASS 9765/9765 | `results/run-01/manifest.json`, seed 42 |
+| run-03 F1 crash/restart oracle | PASS 3095/3095 | kill -9 + restart, seed 44 |
+| run-05 real-data oracle | PASS 2502 valid + 498 DLQ | UCI Retail II slice, SHA256 `572E3627…67BFB` |
+| Sink regression tests | 3 passed, real Postgres | `tests/integration/test_sink.py` |
+| Unit tests | VERIFIED 18 passed | `pytest -m unit`, CPython 3.12.16 |
+| Lint + types | clean | ruff + mypy strict, 16+ files |
+
 | Item | State | Evidence |
 |---|---|---|
 | Kafka `apache/kafka:4.1.2` pinned | IMPLEMENTED (config) | Docker Hub tag API, 2026-11-24, digest `sha256:5cc2a2fd…` |

@@ -58,9 +58,14 @@ def classify(raw: bytes) -> tuple[str, events.OrderEvent | None, str]:
 @click.option("--topic", default=os.environ.get("ORDERS_TOPIC", "orders.events"))
 @click.option("--dlq-topic", default=os.environ.get("DLQ_TOPIC", "orders.dlq"))
 @click.option("--metrics-port", type=int, default=8000)
+@click.option("--max-messages", type=int, default=0,
+              help="Exit 0 after N commits; 0 = run forever")
+@click.option("--profile", type=click.Choice(["orders", "ledger"]),
+              default="orders")
 def main(bootstrap: str, group_id: str, topic: str, dlq_topic: str,
-         metrics_port: int) -> None:
+         metrics_port: int, max_messages: int, profile: str) -> None:
     metrics.serve(metrics_port)
+    table = events.PROFILES[profile]
     consumer = make_consumer(bootstrap, group_id)
     dlq = Producer(
         {
@@ -83,6 +88,7 @@ def main(bootstrap: str, group_id: str, topic: str, dlq_topic: str,
 
     consumer.subscribe([topic], on_assign=on_assign, on_revoke=on_revoke)
     log_record("info", event="started", group=group_id, topic=topic)
+    committed = 0
 
     try:
         while True:
@@ -108,7 +114,7 @@ def main(bootstrap: str, group_id: str, topic: str, dlq_topic: str,
                 retries = 0
                 while True:
                     try:
-                        outcome = db.apply_event(conn, event)
+                        outcome = db.apply_event(conn, event, table)
                         break
                     except Exception as exc:  # noqa: BLE001 - transient path
                         retries += 1
@@ -146,8 +152,13 @@ def main(bootstrap: str, group_id: str, topic: str, dlq_topic: str,
                 if CRASH_AFTER_DB_COMMIT:
                     os._exit(137)  # noqa: SLOS - F6 deterministic test hook
             consumer.commit(message=msg, asynchronous=False)
+            committed += 1
             log_record("info", event="committed", partition=msg.partition(),
                        offset=msg.offset(), kind=kind, detail=detail)
+            if max_messages and committed >= max_messages:
+                log_record("info", event="max_messages_reached",
+                           committed=committed)
+                break
     except KeyboardInterrupt:
         pass
     finally:

@@ -81,3 +81,39 @@ def test_workload_poison_goes_to_dlq():
     wl = generate_workload(seed=3, n_orders=20, run_id="r", poison_every=5)
     assert wl.expected_dlq_ids, "poison records must be expected in DLQ"
     assert wl.expected_valid_ids.isdisjoint(wl.expected_dlq_ids)
+
+
+@pytest.mark.unit
+def test_ledger_lifecycle_transitions():
+    from offsetproof.events import LEDGER_TRANSITIONS, next_status
+
+    assert next_status("NONE", "PAYMENT_INITIATED", LEDGER_TRANSITIONS) == "INITIATED"
+    assert next_status("AUTHORIZED", "PAYMENT_CAPTURED", LEDGER_TRANSITIONS) == "CAPTURED"
+    assert next_status("CAPTURED", "PAYMENT_SETTLED", LEDGER_TRANSITIONS) == "SETTLED"
+    assert next_status("SETTLED", "PAYMENT_REFUNDED", LEDGER_TRANSITIONS) == "REFUNDED"
+    # Money must not move twice: settle-then-settle and refund-then-anything fail.
+    assert next_status("SETTLED", "PAYMENT_SETTLED", LEDGER_TRANSITIONS) is None
+    assert next_status("REFUNDED", "PAYMENT_REFUNDED", LEDGER_TRANSITIONS) is None
+    assert next_status("NONE", "PAYMENT_SETTLED", LEDGER_TRANSITIONS) is None
+
+
+@pytest.mark.unit
+def test_ledger_workload_replay_consistent():
+    wl = generate_workload(seed=11, n_orders=60, run_id="led", profile="ledger")
+    assert wl.expected_valid_ids.isdisjoint(wl.expected_dlq_ids)
+    assert {e.event_id for e in wl.stream} == (
+        wl.expected_valid_ids | wl.expected_dlq_ids
+    )
+    assert set(wl.expected_final.values()) <= {
+        "SETTLED", "REVERSED", "REFUNDED", "AUTHORIZED", "CAPTURED", "INITIATED",
+    }
+
+
+@pytest.mark.unit
+def test_workload_namespaces_order_ids_per_run():
+    a = generate_workload(seed=7, n_orders=10, run_id="run-A")
+    b = generate_workload(seed=7, n_orders=10, run_id="run-B")
+    ids_a = {e.order_id for e in a.stream}
+    ids_b = {e.order_id for e in b.stream}
+    assert ids_a.isdisjoint(ids_b), "same seed+count must not collide across runs"
+    assert all(o.startswith("run-A:") for o in ids_a)
