@@ -142,6 +142,13 @@ excuse for a weak baseline — tracked as a risk in `docs/STATUS.md`.
   Gate C rule engine in parallel (9 tests, green). Finance + real-data
   tracks live. User granted blanket autonomous permission; sole-contributor
   rule unchanged.
+- **2026-11-24 — S6.** Solo sprint (subagent runtime down): Gate D
+  read-only investigator (advisory LLM, citation validation, unknown
+  fallback) + Gate E minimal web view (taste preflight, no decoration) +
+  fault-runner CLI + blinded comparison scoring + bundle/benchmark CLIs.
+  Rejected a guessed Admin API from memory; verified every call against the
+  installed client. Unit suite at 47, ruff + strict mypy clean. README now
+  reports only measured runs. No compromises taken on the way here.
 - **2026-11-24 — S4.** F1 crash/restart PASS (3095/3095 after SIGKILL).
   run-02 taught a real lesson: same `order-{i}` ids across runs collided in
   the long-lived projection and failed the oracle correctly — fixed with
