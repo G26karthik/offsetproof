@@ -19,8 +19,8 @@ from typing import Any
 import click
 import yaml
 
-from offsetproof.ops.drain import drain_until_pass, start_consumer
-from offsetproof.ops.drain import stop_consumer
+from offsetproof.ops.drain import drain_until_pass, split_logs
+from offsetproof.ops.drain import start_consumer, stop_consumer
 
 
 def _sh(args: list[str], cwd: Path) -> str:
@@ -52,7 +52,8 @@ def main(config: str, out: str, dry_run: bool) -> None:
         click.echo(json.dumps(scorecard, indent=2))
         return
     seeds = [int(plan.get("seed", 42))]
-    n_trials = int(plan.get("fault_trials", 0))
+    n_trials = int(plan.get("fault_trials", 0)) + int(
+        plan.get("control_trials", 0))
     orders = int(plan.get("events_per_trial", 10000)) // 4 or 200
     consumer = start_consumer(root, "localhost:29092",
                               out_dir / "benchmark-consumer.log")
@@ -78,6 +79,7 @@ def main(config: str, out: str, dry_run: bool) -> None:
         drain_s = round(time.time() - t0, 1)
         _sh([sys.executable, "-m", "offsetproof.ops.bundle", "--run-dir",
              str(run_dir), "--bootstrap", "localhost:29092"], root)
+        split_logs(out_dir / "benchmark-consumer.log", run_dir, manifest)
         _sh([sys.executable, "-m", "offsetproof.diagnose", "--mode", "rules",
              "--run", str(run_dir)], root)
         attempted = int(manifest["attempted"])

@@ -17,7 +17,7 @@ from typing import Any
 
 import click
 
-from .drain import drain_until_pass, start_consumer, stop_consumer
+from .drain import drain_until_pass, split_logs, start_consumer, stop_consumer
 
 
 def _sh(args: list[str], cwd: Path, env_extra: dict[str, str] | None = None,
@@ -51,19 +51,7 @@ def _one_run(root: Path, demo: Path, name: str, seed: int, orders: int,
     verdict = drain_until_pass(run_dir, bootstrap, root, consumer=consumer)
     _sh([sys.executable, "-m", "offsetproof.ops.bundle", "--run-dir",
          str(run_dir), "--bootstrap", bootstrap], root)
-    # One consumer serves all runs, so its log is shared. Split this run's
-    # records by event_id (commit lines carry it); keep non-commit lines,
-    # which describe group state rather than any single run.
-    run_ids = set(manifest.get("valid_ids", [])) | set(
-        manifest.get("invalid_ids", []))
-    with open(demo / "demo-consumer.log", encoding="utf-8") as src:
-        kept = [
-            line for line in src
-            if '"event_id": null' in line
-            or any(eid in line for eid in run_ids)
-        ]
-    (run_dir / "consumer_logs.jsonl").write_text("".join(kept),
-                                                 encoding="utf-8")
+    split_logs(demo / "demo-consumer.log", run_dir, manifest)
     _sh([sys.executable, "-m", "offsetproof.diagnose", "--mode", "rules",
          "--run", str(run_dir)], root)
     verify_out = _sh(
