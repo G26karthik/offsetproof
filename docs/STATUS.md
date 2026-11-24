@@ -12,7 +12,14 @@
   integration fixture now deletes only its own run_id rows, never TRUNCATE.
 - run-07 poison rerun: exposed DLQ identity bug (below); evidence kept.
 - run-08 poison (seed 47, 800 orders): 2911 valid + 205/205 DLQ, PASS.
-- run-09 F6 crash-after-DB-commit (seed 48): exit 137 observed, draining.
+- run-09 F6 crash-after-DB-commit (seed 48): exit 137, 776/776 PASS.
+- run-10 DB-down 45s (seed 49): pre-fix code never reconnected (439/1558);
+  with ResilientConnection the remainder drained to full PASS.
+- run-11 hot partition (seed 50, skew 0.5): partition 0 lag 1,783 vs
+  ~270 elsewhere; 1582 valid + 1550 invalid all reconciled, PASS.
+  (Hot key replays concatenated lifecycles, so its repeats are
+  expected-invalid — volume skew is real, quarantine is correct.)
+- run-12 payment ledger (seed 51, profile ledger): 1571/1571 PASS.
 - Bugs caught by measurement: cross-run order_id collision (per-run
   namespace), oracle run filter, sink phantom rows (exception rollback),
   UUID-only DLQ column (TEXT), DLQ run attribution (envelope run_id),
