@@ -130,6 +130,12 @@ excuse for a weak baseline — tracked as a risk in `docs/STATUS.md`.
 
 ## Log (newest first)
 
+- **2026-11-24 — S1 (close).** Scaffold + Gate A code committed locally as
+  `362b9a9` (scaffold) and `6a3810d` (contract/workload/producer/consumer/
+  sink/oracle/tests). Nothing executed: no Python and no Docker daemon were
+  reachable from this sandbox. `gh` auth unconfirmed, so no remote yet.
+  Next: user starts Docker Desktop + points me at Python; then unit tests,
+  `make up`, and the first real Gate A integration run.
 - **2026-11-24 — S1.** Scope answers received (full A–E, local Docker,
   public `offsetproof`). Environment inventoried; three blockers named
   (Python path, Docker daemon, ponytail location). Kafka 4.1.2 / 4.4.0 and
