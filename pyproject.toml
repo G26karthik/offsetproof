@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "offsetproof"
+version = "0.1.0"
+description = "Reproducible Kafka streaming reliability lab with evidence-backed incident investigation"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Apache-2.0" }
+authors = [{ name = "G Karthik" }]
+dependencies = [
+  # Pinned 2026-11-24: stable 2.x line (librdkafka 2.16.0). The 4.4 client is
+  # an explicit Preview with a changed API — see journey.md §3.
+  "confluent-kafka==2.16.1",
+  "psycopg[binary]==3.2.4",
+  "fastapi==0.118.2",
+  "uvicorn[standard]==0.34.0",
+  "prometheus-client==0.21.1",
+  "pydantic==2.10.6",
+  "pyyaml==6.0.2",
+  "click==8.1.8",
+]
+
+[project.optional-dependencies]
+agent = [
+  "langgraph==0.2.43",
+  "langchain-core==0.3.34",
+]
+dev = [
+  "pytest==8.3.4",
+  "ruff==0.8.4",
+  "mypy==1.14.1",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+  "unit: fast tests, no Docker required",
+  "integration: real Kafka + Postgres via Docker Compose",
+]

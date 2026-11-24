@@ -1,0 +1,9 @@
+# Baseline benchmark plan (targets, NOT results).
+# Sample sizes below are planned, not achieved.
+seed: 42
+input_rates: [200, 1000]
+events_per_trial: 10000
+fault_trials: 20
+control_trials: 5
+hold_window_seconds: 60
+lag_tolerance: 100

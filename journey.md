@@ -1,0 +1,137 @@
+# OffsetProof — Engineering Journey
+
+> A running log of every material decision: what was chosen, what was
+> rejected, what evidence supported it, and what remains unverified.
+> Newest entries go on top. Nothing here is a claim of completion —
+> `docs/STATUS.md` tracks gate verification separately.
+
+## 2026-11-24 — Session 1: foundations, versions, uniqueness
+
+### 1. What the user asked for (and how I interpreted it)
+
+Build the **full A–E product** (user chose full scope over A–C core or A–B
+slice), running as a **local Docker lab** on this laptop, published as a new
+**public repo named `offsetproof`**. Cross-cutting demands:
+
+- Use Context7; use the "ponytail" skill; use the best available frontend
+  skills if a frontend is built.
+- Deep, broad, rigorous; every engineering decision shown.
+- Maintain this `journey.md`.
+- Untangle the codebase (today: 4 markdown docs, zero code — so the
+  "tangle" is ambiguity, not code; resolved by scaffolding a clean layout).
+- Real engineering git history with periodic commits.
+- Research modern problems; find where this project uniquely helps.
+
+### 2. Tool availability — honest inventory (no pretending)
+
+| Requested capability | Status in this session | Substitute / action |
+|---|---|---|
+| Context7 (version-pinned library docs) | **No Context7 tool endpoint is installed in this session** | Used the same grounding method by hand: Docker Hub tag API + official Apache/Confluent docs, digests recorded below. If you have a Context7 MCP, point me at its config and I will re-verify through it. |
+| "ponytail" skill | **Not found.** Searched `~/.claude/skills`, `~/.agents/skills`, synced/trash manifests, and the workspace — no match for `*pony*`/`*tail*`. | **Need from you: the path or install source of the ponytail skill.** I will adopt it the moment I can read its `SKILL.md`. |
+| Frontend skills | `web-artifacts-builder` (React/Tailwind/shadcn) and `built-in-browser` are installed; bundled `taste` skill governs visual design and is mandatory preflight before Gate E UI work | Gate E will load `taste` first, then build the minimal read-only view. |
+| `scientific-brainstorming` | Loaded and used for the uniqueness/impact track (§5). | Cited in release notes if it shapes the final report (per its license). |
+| Python interpreter | **None visible**: `py` launcher reports "No installed Python found", `where.exe python` finds nothing, and `AppData\Local\Programs` is not listable from this sandbox. Python is very likely installed outside the sandbox's view. | **Need from you: either the Python exe path, or install 3.12+.** All code below is written but **NOT RUN** until then. |
+| Docker daemon | Client 29.7.2 present, **daemon not running** (`docker version` cannot reach `npipe:////./pipe/docker_engine`). | **Need from you: start Docker Desktop**, then I run `make up` + integration tests. |
+| `gh` auth | Installed (2.100.0) but its config is unreadable from this sandbox, so I cannot confirm login. | Local git history starts now; repo creation/push the moment auth is confirmed. Fallback: I give you the 3 commands to run. |
+
+### 3. Version pins — verified today, not copied from the PRD
+
+- **Kafka: `apache/kafka:4.1.2`** (PRD's candidate), verified live via the
+  Docker Hub tag API on 2026-11-24: `tag_status: active`, multi-arch
+  (amd64 digest `sha256:d50ab7b5…`, arm64 `sha256:4ee934b5…`), pushed
+  2026-03-17. Full index digest `sha256:5cc2a2fd…`.
+- **Why not 4.4.0?** Verified it exists (active, pushed 2026-10-22, index
+  digest `sha256:833b867a…`, amd64 `sha256:76af3d01…`). Rejected as the
+  pinned base *for now*: one month of soak is too little for a reliability
+  lab's foundation, and the 4.4 line introduces preview-stage features.
+  Recorded as the documented upgrade trial after Gate A is green.
+- **Python client: `confluent-kafka==2.16.1`** (stable 2.x line, published
+  2026-10-28, librdkafka 2.16.0). Rejected the 4.4 client: it is an explicit
+  **Preview** with changed class names/imports (Rust core) — wrong base for
+  reproducible work. Rejected `kafka-python`: pure-Python, throughput-limited.
+- **Python: 3.12** (PRD floor; best wheel coverage for `confluent-kafka`).
+- **PostgreSQL: `postgres:16`** — digest to be recorded at first pull
+  (daemon unavailable today, so no silent invention).
+
+### 4. Architecture decisions (Gate A shape)
+
+- **Consumer offset discipline:** `enable.auto.commit=false`,
+  `enable.auto.offset.store=false`; commit a message's offset **only after**
+  its PostgreSQL transaction commits (or after a validated DLQ handoff).
+  Ordering within a partition is never skipped past unfinished work.
+- **Idempotence, not exactly-once:** one Postgres transaction inserts
+  `event_id` under a unique constraint **and** applies the state transition.
+  Redelivery → constraint hit → harmless no-op. The DLQ handoff explicitly
+  does **not** claim exactly-once (a crash mid-handoff can duplicate).
+- **Event key = `order_id`** → per-order partition affinity and ordering.
+- **Single coherent workload** (synthetic order fulfillment) — no Spark,
+  Hadoop, K8s, microservice sprawl. One pipeline, truthfully measured.
+- **Ground-truth isolation:** the producer's ack manifest and fault labels
+  live outside the investigator's input path from day one (directory-level
+  separation + an import guard test), because retrofitting blindness later
+  never works.
+
+### 5. Modern-problems research → uniqueness and impact
+
+Researched 2026 literature *after* an independent problem framing (per the
+brainstorming protocol: ideas first, literature second).
+
+**What the literature says (located evidence, 2026):**
+
+1. **The dual-write problem is still the #1 trap.** Fresh 2026 guides
+   (transactional-outbox pattern coverage across Spring/Kafka stacks) repeat
+   the same lesson: Kafka transactions are atomic *inside Kafka only*; the
+   moment a consumer writes to Postgres, you are in at-least-once territory
+   and must design idempotence. Interviewers still use the
+   crash-between-DB-commit-and-offset-commit scenario as a filter.
+2. **Lag is a symptom, not a diagnosis.** Runbooks and 2025 postmortems
+   converge on five causes (slow sink, hot partition, rebalance storm,
+   poison pill, under-provisioning). Existing open tools (`klag`, AKHQ,
+   Conduktor) classify the *symptom*. None verify *business-data
+   correctness* (did order #4127 survive?) and none blind-test an LLM
+   diagnostician against a rule baseline.
+3. **"Just add consumers" is folk medicine.** Multiple 2025–26 analyses show
+   a single hot partition caps group throughput no matter the fleet size —
+   yet teams keep scaling horizontally first.
+4. **Exactly-once confusion persists.** 2026 explainers still have to clarify
+   that broker-side EOS ≠ end-to-end EOS with an external sink.
+
+**Where OffsetProof fits (ideas, to be validated by the build):**
+
+- **I1 — Correctness oracle as first-class output.** The independent
+  acknowledged-manifest reconciliation (`valid_missing`,
+  `duplicate_database_effects`) answers the question dashboards cannot:
+  *did we lose or double-apply business effects?* F6 (crash after DB commit)
+  turns the interview-filter scenario into a runnable regression test.
+- **I2 — Blinded diagnosis benchmark with `unknown` as a passing grade.**
+  Rules vs. LangGraph investigator on frozen, held-out fault runs, scored on
+  top-1 family accuracy *and* evidence-support precision (every factual
+  claim must cite timestamped telemetry). Publishing a negative result
+  (rules ≥ agent) is an explicit accepted outcome.
+- **I3 — Falsifiable ops claims.** F4 (hot partition) is designed to show
+  scaling failing live; F2 isolates sink latency from broker latency with
+  measured histograms. Each claim ships with seed, hardware, and raw bundle.
+
+**Adversarial review (of my own framing):** the "uniqueness" above is
+relative to *open, reproducible* tooling — commercial platforms may do parts
+of this behind closed doors, and I have not surveyed them; the honest claim
+is "reproducible + blinded + correctness-checked," not "first ever." The
+`unknown`-is-correct grading needs careful control design or it becomes an
+excuse for a weak baseline — tracked as a risk in `docs/STATUS.md`.
+
+### 6. Repo and history plan
+
+- Local repo at `offsetproof/` (this directory), git-initialized, committed
+  at meaningful gates (scaffold → Gate A code → oracle/tests → B → C → D →
+  E), each commit a reviewable unit. Remote `offsetproof` (public) created
+  once `gh` auth is confirmed; until then the local history is the record.
+- Every metric-bearing claim lands in `results/<run_id>/` with manifest,
+  seed, code SHA, and raw artifacts — or it is marked NOT RUN.
+
+## Log (newest first)
+
+- **2026-11-24 — S1.** Scope answers received (full A–E, local Docker,
+  public `offsetproof`). Environment inventoried; three blockers named
+  (Python path, Docker daemon, ponytail location). Kafka 4.1.2 / 4.4.0 and
+  confluent-kafka 2.16.1 verified via primary APIs. Modern-problems research
+  done; uniqueness thesis recorded (§5). Scaffold begins.
