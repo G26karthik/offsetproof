@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import urllib.request
+from typing import Any
 
 
 class StubAdapter:
@@ -22,36 +23,70 @@ class StubAdapter:
 
 
 class HttpAdapter:
-    """Minimal chat-completions client (OpenAI-compatible endpoint)."""
+    """Provider-neutral chat client. Keys stay the user's: reads
+    OPENAI_API_KEY (OpenAI-compatible endpoint) or ANTHROPIC_API_KEY
+    (Anthropic messages endpoint). The key value is never logged."""
 
     def __init__(self) -> None:
-        self.api_key = os.environ.get("LLM_API_KEY", "")
+        openai_key = os.environ.get("OPENAI_API_KEY", "")
+        anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        if openai_key:
+            self.provider = "openai"
+            self.api_key = openai_key
+        else:
+            self.provider = "anthropic"
+            self.api_key = anthropic_key
         self.model = os.environ.get("LLM_MODEL", "")
-        self.endpoint = os.environ.get(
-            "LLM_ENDPOINT", "https://api.openai.com/v1/chat/completions"
-        )
+        self.endpoint = os.environ.get("LLM_ENDPOINT", "")
 
     def configured(self) -> bool:
         return bool(self.api_key and self.model)
 
+    @staticmethod
+    def parse_openai(payload: dict[str, Any]) -> str:
+        return str(payload["choices"][0]["message"]["content"])
+
+    @staticmethod
+    def parse_anthropic(payload: dict[str, Any]) -> str:
+        blocks = payload.get("content", [])
+        texts = [b.get("text", "") for b in blocks if isinstance(b, dict)]
+        combined = "".join(texts)
+        if not combined:
+            raise ValueError("empty anthropic content")
+        return combined
+
+    def _request(self, prompt: str) -> tuple[str, bytes, dict[str, str], str]:
+        if self.provider == "anthropic":
+            url = self.endpoint or "https://api.anthropic.com/v1/messages"
+            body = json.dumps({"model": self.model, "max_tokens": 2000,
+                               "messages": [{"role": "user",
+                                             "content": prompt}]}).encode()
+            headers = {"Content-Type": "application/json",
+                       "x-api-key": self.api_key,
+                       "anthropic-version": "2023-06-01"}
+            parse = "anthropic"
+        else:
+            url = self.endpoint or "https://api.openai.com/v1/chat/completions"
+            body = json.dumps(
+                {"model": self.model,
+                 "messages": [{"role": "user", "content": prompt}],
+                 "temperature": 0}).encode()
+            headers = {"Content-Type": "application/json",
+                       "Authorization": f"Bearer {self.api_key}"}
+            parse = "openai"
+        return url, body, headers, parse
+
     def complete(self, prompt: str) -> str | None:
         if not self.configured():
             return None
-        body = json.dumps(
-            {"model": self.model,
-             "messages": [{"role": "user", "content": prompt}],
-             "temperature": 0}
-        ).encode()
-        req = urllib.request.Request(
-            self.endpoint,
-            data=body,
-            headers={"Content-Type": "application/json",
-                     "Authorization": f"Bearer {self.api_key}"},
-            method="POST",
-        )
+        url, body, headers, parse = self._request(prompt)
+        req = urllib.request.Request(url, data=body, headers=headers,
+                                     method="POST")
         try:
             with urllib.request.urlopen(req, timeout=120) as resp:
                 payload = json.loads(resp.read().decode("utf-8"))
-            return str(payload["choices"][0]["message"]["content"])
+            if parse == "anthropic":
+                return self.parse_anthropic(payload)
+            return self.parse_openai(payload)
         except Exception:  # noqa: BLE001 - any transport failure abstains
             return None

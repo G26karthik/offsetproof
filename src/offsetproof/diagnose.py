@@ -353,9 +353,13 @@ def diagnose_bundle(bundle_dir: Path) -> dict[str, Any]:
 def main(mode: str, run_dir: str) -> None:
     bundle = Path(run_dir)
     if mode == "agent":
-        click.echo("agent mode requires Gate D + LLM_API_KEY; not implemented yet",
-                   err=True)
-        raise SystemExit(2)
+        from .agent.pipeline import investigate
+
+        incident = investigate(bundle)
+        (bundle / "incident_agent.json").write_text(
+            json.dumps(incident, indent=2), encoding="utf-8")
+        click.echo(json.dumps(incident, indent=2))
+        return
     incident = diagnose_bundle(bundle)
     (bundle / "incident_rule.json").write_text(json.dumps(incident, indent=2),
                                                encoding="utf-8")

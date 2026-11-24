@@ -67,6 +67,19 @@ def test_empty_reply_abstains(tmp_path):
 
 
 @pytest.mark.unit
+def test_provider_parsing():
+    from offsetproof.agent.llm import HttpAdapter
+
+    openai_payload = {"choices": [{"message": {"content": "hi"}}]}
+    assert HttpAdapter.parse_openai(openai_payload) == "hi"
+    anthropic_payload = {"content": [{"type": "text", "text": "a"},
+                                     {"type": "text", "text": "b"}]}
+    assert HttpAdapter.parse_anthropic(anthropic_payload) == "ab"
+    with pytest.raises(ValueError):
+        HttpAdapter.parse_anthropic({"content": []})
+
+
+@pytest.mark.unit
 def test_tools_reject_escape_and_non_allowlisted(tmp_path):
     d = _bundle(tmp_path)
     with pytest.raises(ValueError):
