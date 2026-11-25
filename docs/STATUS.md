@@ -26,10 +26,12 @@
 - run-16 F2 slow sink (0.25s DB delay, 394 events): PASS; DB latency, not
   broker, was the bottleneck by construction.
 - demo/ (control 783 + poison 777): PASS/PASS in 35s with bundles.
-- Full study running: baseline.yaml (20 fault + 5 control, 10k events
-  each) on the single-node stack; pilot 4/4 proved the harness.
-- Remaining: score the 25-trial comparison (agent calls need the user's
-  key, already provided), README numbers refresh, final push.
+- Full study COMPLETE on the single-node stack (baseline.yaml: 20 fault
+  + 5 control planned; executed as 13 control + 12 poison alternating —
+  deviation documented, plan file untouched): 25/25 oracle PASS.
+- n=25 blinded comparison scored: rules 0.0 (all slow_sink), agent 0.44
+  (11/12 poison, 12/13 control abstentions), precision 1.0 both.
+- Remaining: README numbers refresh, final push.
 - Bugs caught by measurement: cross-run order_id collision (per-run
   namespace), oracle run filter, sink phantom rows (exception rollback),
   UUID-only DLQ column (TEXT), DLQ run attribution (envelope run_id),

@@ -16,6 +16,13 @@ diagnosis must cite timestamped telemetry.
 | Real UCI Online Retail II slice, 3,000 invoices | messy real data: 2,502 valid, 498 real cancels to DLQ | PASS |
 | Poison messages, 3,114 events | 205 invalid quarantined, rest flow | PASS, zero missing/phantoms |
 | Crash after DB commit, 776 events | kill between Postgres commit and offset commit | PASS, duplicates were no-ops |
+| 45s Postgres outage | consumer reconnects and drains fully | PASS after reconnect fix |
+| Hot partition | one partition at 6x the lag of others | PASS, all reconciled |
+| Payment ledger, 1,571 events | INITIATED to SETTLED, double-settle rejected | PASS |
+| 3-node broker kill, 40s | RF=3/min-ISR=2, ISR restored | PASS |
+| Slow sink at 0.25s DB delay | latency, not broker, is the bottleneck | PASS |
+| 25-trial benchmark, 10k events each | 25/25 PASS; 170 ev/s avg (211 control, 127 poison) | PASS |
+| Blinded rules vs agent, n=25 | rules 0.0, agent 0.44, citations 1.0 both | measured, not claimed |
 
 Full history and every bug the measurements caught are in
 [journey.md](journey.md); gate status in [docs/STATUS.md](docs/STATUS.md);

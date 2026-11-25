@@ -130,6 +130,15 @@ excuse for a weak baseline — tracked as a risk in `docs/STATUS.md`.
 
 ## Log (newest first)
 
+- **2026-11-25 — S13.** Full study done: 25/25 oracle PASS at ~170 ev/s
+  (211 control, 127 poison). n=25 blinded comparison: rules 0.0 (slow_sink
+  × 25 — needs the latency signal), agent 0.44 (11/12 poison hits with
+  cited DLQ evidence, 12/13 correct control abstentions, 1 stalled miss).
+  The n=1 and n=4 pilot comparisons are WITHDRAWN: their bundles used the
+  leaky log splitter that framed clean runs with other runs' poison lines.
+  Withdrew them openly instead of quietly keeping tainted numbers — the
+  rerun is what counts. Comparison used real API calls on your key; spend
+  was cents.
 - **2026-11-24 — S12.** Full-scale mode: shared-consumer drain harness
   (kills between trials caused post-kill join stalls — one consumer per
   session now), output dirs anchored to repo root, producer fails loudly

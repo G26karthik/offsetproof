@@ -13,10 +13,10 @@
 | run-15 F5 broker kill | PASS, RF=3/minISR=2, ISR restored | 3-node, seed 54 |
 | run-16 slow sink | PASS 394/394 at 0.25s DB delay | seed 55 |
 | demo control + poison | PASS/PASS in 35s with bundles | seeds 100/101 |
-| Blinded rules vs agent (n=1, poison) | rules: ambiguous (correct abstention); agent (gpt-4o-mini): stalled_consumer/high (WRONG) | demo fault-poison bundle, 2026-11-24 |
-| Agent evidence precision | 1.0 cited, 0.0 correct family | failure is interpretation, not fabrication |
-| Blinded n=4 (2 control + 2 poison) | rules top-1 0.0 (2 ambiguous, 2 slow_sink incl. 1 false positive on healthy traffic); agent top-1 0.25 (1 bad_payload hit, 1 overconfident stalled_consumer miss, 2 correct control abstentions); citation precision 1.0 both | study + demo bundles, gpt-4o-mini |
-| Pilot benchmark (4 trials) | 4/4 PASS, ~51 ev/s control and poison | eval/plans/pilot.yaml |
+| Blinded n=25 (13 control + 12 poison) | rules top-1 0.0 (slow_sink × 25, systematic false positive without latency evidence); agent top-1 0.44 (11/12 poison hits, 12/13 correct control abstentions, 1 stalled_consumer miss); citation precision 1.0 both, zero fabricated references | results/benchmark/comparison.json, gpt-4o-mini |
+| n=1 + n=4 pilot comparisons | WITHDRAWN — bundles built with the leaky log splitter (cross-run contamination); superseded by n=25 | journey S8/S11 |
+| Pilot benchmark (4 trials) | 4/4 PASS, ~51 ev/s | eval/plans/pilot.yaml |
+| Full benchmark (25 trials, 10k events each) | 25/25 PASS; 170 ev/s avg (211 control, 127 poison — quarantine costs ~40%) | results/benchmark/scorecard.json |
 | Sink regression tests | 4 passed, real Postgres | `tests/integration/test_sink.py` |
 | Unit tests | VERIFIED 27 passed (incl. 9 Gate C rules) | `pytest -m unit`, CPython 3.12.16 |
 | Lint + types | clean | ruff + mypy strict, 17 files |
