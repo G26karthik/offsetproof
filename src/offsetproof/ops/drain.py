@@ -69,23 +69,46 @@ def drain_until_pass(run_dir: Path, bootstrap: str, root: Path,
     return verdict
 
 
+# Log event names that describe group state rather than one record.
+# Commit lines are attributed by their event_id instead.
+GROUP_EVENTS = frozenset({
+    "started", "assigned", "revoked", "max_messages_reached",
+    "kafka_error", "transient_retry", "none_value", "retry_budget_exhausted",
+})
+
+
 def split_logs(
     shared_log: Path, run_dir: Path, manifest: dict[str, Any]
 ) -> Path:
     """Carve this run's records out of a shared consumer log.
 
-    Commit lines carry their event_id; keep lines whose id belongs to this
-    run's manifest (valid or invalid). Non-commit lines describe group
-    state, not any single run, and are kept for context.
+    Commit lines carry their event_id and are kept only when the id is in
+    this run's manifest. Group-state lines (assigns, errors, retries) carry
+    no record identity and are kept for context. Never keep a commit line
+    by null id: schema-invalid records from a poison run would otherwise
+    leak into clean runs' bundles and frame the diagnosis.
     """
+    import json as _json
+
     run_ids = set(manifest.get("valid_ids", [])) | set(
         manifest.get("invalid_ids", []))
+    kept = []
     with open(shared_log, encoding="utf-8", errors="replace") as src:
-        kept = [
-            line for line in src
-            if '"event_id": null' in line
-            or any(eid in line for eid in run_ids)
-        ]
+        for line in src:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            try:
+                entry = _json.loads(stripped)
+            except ValueError:
+                continue
+            if not isinstance(entry, dict):
+                continue
+            if entry.get("event") == "committed":
+                if entry.get("event_id") in run_ids:
+                    kept.append(line)
+            elif entry.get("event") in GROUP_EVENTS:
+                kept.append(line)
     out = run_dir / "consumer_logs.jsonl"
     out.write_text("".join(kept), encoding="utf-8")
     return out

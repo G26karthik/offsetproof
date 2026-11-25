@@ -246,9 +246,15 @@ def main(bootstrap: str, group_id: str, topic: str, dlq_topic: str,
             if should_commit(committed, last_commit_at, time.monotonic()):
                 consumer.commit(message=msg, asynchronous=False)
                 last_commit_at = time.monotonic()
-            log_record("info", event="committed", partition=msg.partition(),
+            # Log the DLQ identity, not the parse result: for
+            # schema-invalid records the parsed event is None but the
+            # envelope id is what the DLQ row carries. Logging None
+            # here once leaked poison lines into other runs' bundles.
+            log_record("info", event="committed",
+                       partition=msg.partition(),
                        offset=msg.offset(), kind=kind, detail=detail,
-                       event_id=event.event_id if event else None)
+                       event_id=(event.event_id if event is not None
+                                 else envelope_event_id))
             if max_messages and committed >= max_messages:
                 log_record("info", event="max_messages_reached",
                            committed=committed)
